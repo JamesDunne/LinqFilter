@@ -46,6 +46,8 @@ namespace LinqFilter
                 "System.Core.dll"
             }, StringComparer.InvariantCultureIgnoreCase);
 
+            List<string> linqArgList = new List<string>(args.Length / 2);
+
             // Process cmdline arguments:
             Queue<string> argQueue = new Queue<string>(args);
             while (argQueue.Count > 0)
@@ -62,6 +64,14 @@ namespace LinqFilter
                         string tmpCode = File.ReadAllText(path);
                         // Append the loaded file contents to the StringBuilder
                         sbLinq.AppendLine(tmpCode);
+                    }
+                    else if (arg == "-a")
+                    {
+                        if (!AssertMoreArguments(argQueue, "-a option expects a string argument")) return;
+
+                        // Pop the argument and add it to the args list:
+                        string sa = argQueue.Dequeue();
+                        linqArgList.Add(sa);
                     }
                     else if (arg == "-r")
                     {
@@ -96,6 +106,10 @@ namespace LinqFilter
                     else if (arg == "-0")
                     {
                         newLine = "\0";
+                    }
+                    else if (arg == "-sp")
+                    {
+                        newLine = " ";
                     }
                     else
                     {
@@ -144,7 +158,7 @@ namespace LinqFilter
 @"
 public class DynamicQuery
 {
-    public static IEnumerable<string> GetQuery(IEnumerable<string> lines)
+    public static IEnumerable<string> GetQuery(IEnumerable<string> lines, string[] args)
     {
         var query =
 " + sbLinq.ToString() + @";
@@ -175,9 +189,11 @@ public class DynamicQuery
                 return;
             }
 
+            string[] linqArgs = linqArgList.ToArray();
+
             // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
             var t = results.CompiledAssembly.GetType("DynamicQuery");
-            IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[1] { lines });
+            IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[2] { lines, linqArgs });
 
             // Run the filter:
             foreach (string line in lineQuery)
@@ -196,23 +212,25 @@ Each non-option argument is appended line-by-line to form a LINQ query
 expression. This query is run over the stdin lines of input to produce
 stdout lines of output.
 
+-a [arg]       to append to the `args` string[] passed to the LINQ query.
 -i [filename]  is used to import a section of lines of LINQ query expression
                code from a file. This option can be repeated as many times in
                order to compose larger queries from files containing partial
                bits of code.
 -u [namespace] is used to add a `using namespace;` line.
 -r [assembly]  is used to add a reference to a required assembly.
--lf            writes out newlines using \n
--crlf          writes out newlines using \r\n
--0             writes out newlines using \0
--nl            writes out newlines using Environment.NewLine (default)
+-lf            sets output delimiter to ""\n""
+-crlf          sets output delimiter to ""\r\n""
+-0             sets output delimiter to ""\0"" (NUL char)
+-sp            sets output delimiter to "" "" (single space)
+-nl            sets output delimiter to Environment.NewLine (default)
 
 The final constructed query must be of the form:
    from <range variable> in lines
    ...
    select <string variable>
 
-The resulting type of the query must be IEnumerable<string>. The source
+The resulting type of the query must be `IEnumerable<string>`. The source
 is an `IEnumerable<string>` named `lines`.");
         }
 
