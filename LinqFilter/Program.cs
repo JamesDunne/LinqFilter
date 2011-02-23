@@ -9,6 +9,8 @@ namespace LinqFilter
 {
     class Program
     {
+        static string newLine = Environment.NewLine;
+
         static bool AssertMoreArguments(Queue<string> argQueue, string message)
         {
             if (argQueue.Count == 0)
@@ -24,27 +26,7 @@ namespace LinqFilter
         {
             if (args.Length == 0)
             {
-                Console.Error.WriteLine(
-@"LinqFilter.exe [<line of LINQ code> | -i [filename] ] ...
-
-Each non-option argument is appended line-by-line to form a LINQ query
-expression. This query is run over the stdin lines of input to produce
-stdout lines of output.
-
--i [filename]  is used to import a section of lines of LINQ query expression
-               code from a file. This option can be repeated as many times in
-               order to compose larger queries from files containing partial
-               bits of code.
--u [namespace] is used to add a `using namespace;` line.
--r [assembly]  is used to add a reference to a required assembly.
-
-The final constructed query must be of the form:
-   from <range variable> in lines
-   ...
-   select <string variable>
-
-The resulting type of the query must be IEnumerable<string>. The source
-is an `IEnumerable<string>` named `lines`.");
+                DisplayUsage();
                 Environment.ExitCode = -2;
                 return;
             }
@@ -99,6 +81,22 @@ is an `IEnumerable<string>` named `lines`.");
                         if (!usingNamespaces.Contains(ns))
                             usingNamespaces.Add(ns);
                     }
+                    else if (arg == "-nl")
+                    {
+                        newLine = Environment.NewLine;
+                    }
+                    else if (arg == "-lf")
+                    {
+                        newLine = "\n";
+                    }
+                    else if (arg == "-crlf")
+                    {
+                        newLine = "\r\n";
+                    }
+                    else if (arg == "-0")
+                    {
+                        newLine = "\0";
+                    }
                     else
                     {
                         Console.Error.WriteLine("Unrecognized option \"{0}\"!", arg);
@@ -111,6 +109,14 @@ is an `IEnumerable<string>` named `lines`.");
                     // Append the argument as a line of code in the LINQ query:
                     sbLinq.AppendLine(arg);
                 }
+            }
+
+            string linqQueryCode = sbLinq.ToString();
+            if (linqQueryCode.Length == 0)
+            {
+                DisplayUsage();
+                Environment.ExitCode = -2;
+                return;
             }
 
             // Create an IEnumerable<string> that reads stdin line by line:
@@ -140,7 +146,8 @@ public class DynamicQuery
 {
     public static IEnumerable<string> GetQuery(IEnumerable<string> lines)
     {
-        var query = " + sbLinq.ToString() + @";
+        var query =
+" + sbLinq.ToString() + @";
         return query;
     }
 }"
@@ -150,9 +157,19 @@ public class DynamicQuery
             // Check compilation errors:
             if (results.Errors.Count > 0)
             {
-                foreach (var error in results.Errors)
+                int lineOffset = 6 + usingNamespaces.Count;
+                string[] linqQueryLines = StreamLines(new StringReader(sbLinq.ToString())).ToArray();
+
+                foreach (CompilerError error in results.Errors)
                 {
-                    Console.Error.WriteLine(error);
+                    for (int i = -3; i <= 0; ++i)
+                    {
+                        int j = error.Line + i - lineOffset;
+                        if (j < 0) continue;
+                        Console.Error.WriteLine(linqQueryLines[j]);
+                    }
+                    Console.Error.WriteLine(new string(' ', error.Column - 1) + "^");
+                    Console.Error.WriteLine("{0} {1}: {2}", error.IsWarning ? "warning" : "error", error.ErrorNumber, error.ErrorText);
                 }
                 Environment.ExitCode = -1;
                 return;
@@ -165,8 +182,38 @@ public class DynamicQuery
             // Run the filter:
             foreach (string line in lineQuery)
             {
-                Console.Out.WriteLine(line);
+                Console.Out.Write(line);
+                Console.Out.Write(newLine);
             }
+        }
+
+        private static void DisplayUsage()
+        {
+            Console.Error.WriteLine(
+@"LinqFilter.exe [<line of LINQ code> | -i [filename] ] ...
+
+Each non-option argument is appended line-by-line to form a LINQ query
+expression. This query is run over the stdin lines of input to produce
+stdout lines of output.
+
+-i [filename]  is used to import a section of lines of LINQ query expression
+               code from a file. This option can be repeated as many times in
+               order to compose larger queries from files containing partial
+               bits of code.
+-u [namespace] is used to add a `using namespace;` line.
+-r [assembly]  is used to add a reference to a required assembly.
+-lf            writes out newlines using \n
+-crlf          writes out newlines using \r\n
+-0             writes out newlines using \0
+-nl            writes out newlines using Environment.NewLine (default)
+
+The final constructed query must be of the form:
+   from <range variable> in lines
+   ...
+   select <string variable>
+
+The resulting type of the query must be IEnumerable<string>. The source
+is an `IEnumerable<string>` named `lines`.");
         }
 
         private static IEnumerable<string> StreamLines(TextReader textReader)

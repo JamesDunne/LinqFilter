@@ -56,4 +56,7 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <PropertyGroup>
+    <PostBuildEvent>copy $(TargetPath) C:\TFS\TFC\</PostBuildEvent>
+  </PropertyGroup>
 </Project>
