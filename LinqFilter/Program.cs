@@ -31,9 +31,77 @@ namespace LinqFilter
                 return;
             }
 
-            // Start off a new StringBuilder with a reasonable expected capacity:
-            StringBuilder sbLinq = new StringBuilder(args.Sum(a => a.Length));
+            // TODO: Imported files via -i option cannot include other files with a //-i comment line.
+            List<string> trueArgs = new List<string>(args.Length);
+            for (int i = 0; i < args.Length; ++i)
+            {
+                if (args[i] == "-i")
+                {
+                    if (i >= args.Length - 1)
+                    {
+                        Console.Error.WriteLine("-i argument expects a path");
+                        Environment.ExitCode = -2;
+                        return;
+                    }
 
+                    // Pop the argument and load the file:
+                    ++i;
+                    string path = args[i];
+                    string[] tmpCodeLines = File.ReadAllLines(path);
+                    string lineArg = "-q";
+
+                    // Enqueue up more arguments
+                    foreach (var line in tmpCodeLines)
+                    {
+                        string trimLine = line.TrimStart(' ', '\t');
+
+                        if (trimLine.StartsWith("//-"))
+                        {
+                            string cmtLine = trimLine.Substring(2);
+
+                            int firstSpace = cmtLine.IndexOfAny(new char[] { ' ', '\t' });
+                            firstSpace = (firstSpace >= 0) ? firstSpace : cmtLine.Length;
+
+                            string tmpArg = cmtLine.Substring(0, firstSpace);
+
+                            if ((tmpArg == "-q") || (tmpArg == "-pre") || (tmpArg == "-post"))
+                            {
+                                lineArg = tmpArg;
+                            }
+                            else if (firstSpace != cmtLine.Length)
+                            {
+                                // Queue up the option and its arguments:
+                                string rest = cmtLine.Substring(firstSpace + 1);
+                                trueArgs.Add(tmpArg);
+                                // FIXME: we could split this `rest` with escaped quoted characters into multiple arguments...
+                                trueArgs.Add(rest);
+                            }
+                            else
+                            {
+                                // Just one argument, queue it up:
+                                trueArgs.Add(tmpArg);
+                            }
+                        }
+                        else
+                        {
+                            // Add the line of code with an argument prefix:
+                            trueArgs.Add(lineArg);
+                            trueArgs.Add(line);
+                        }
+                    }
+                }
+                else
+                {
+                    trueArgs.Add(args[i]);
+                }
+            }
+
+            // Start off a new StringBuilder with a reasonable expected capacity:
+            StringBuilder sbLinq = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-q")).Sum(a => a.Length));
+            StringBuilder sbPre = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-pre")).Sum(a => a.Length));
+            StringBuilder sbPost = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-post")).Sum(a => a.Length));
+
+            // Create the defaults for using-namespaces and referenced-assemblies sets:
             HashSet<string> usingNamespaces = new HashSet<string>(new string[] {
                 "System",
                 "System.Collections.Generic",
@@ -46,85 +114,101 @@ namespace LinqFilter
                 "System.Core.dll"
             }, StringComparer.InvariantCultureIgnoreCase);
 
-            List<string> linqArgList = new List<string>(args.Length / 2);
+            List<string> linqArgList = new List<string>(trueArgs.Count / 2);
 
             // Process cmdline arguments:
-            Queue<string> argQueue = new Queue<string>(args);
+            Queue<string> argQueue = new Queue<string>(trueArgs);
             while (argQueue.Count > 0)
             {
                 string arg = argQueue.Dequeue();
-                if (arg.StartsWith("-"))
+                if (!arg.StartsWith("-"))
                 {
-                    if (arg == "-i")
-                    {
-                        if (!AssertMoreArguments(argQueue, "-i option expects a filename")) return;
+                    Console.Error.WriteLine("All arguments must be preceded by an option!");
+                    Environment.ExitCode = -2;
+                    return;
+                }
 
-                        // Pop the argument and load the file:
-                        string path = argQueue.Dequeue();
-                        string tmpCode = File.ReadAllText(path);
-                        // Append the loaded file contents to the StringBuilder
-                        sbLinq.AppendLine(tmpCode);
-                    }
-                    else if (arg == "-a")
-                    {
-                        if (!AssertMoreArguments(argQueue, "-a option expects a string argument")) return;
+                if (arg == "-q")
+                {
+                    if (!AssertMoreArguments(argQueue, "-q option expects a single argument")) return;
 
-                        // Pop the argument and add it to the args list:
-                        string sa = argQueue.Dequeue();
-                        linqArgList.Add(sa);
-                    }
-                    else if (arg == "-r")
-                    {
-                        if (!AssertMoreArguments(argQueue, "-r option expects an assembly name")) return;
+                    // Append the argument as a line of code in the LINQ query:
+                    string line = argQueue.Dequeue();
+                    sbLinq.AppendLine(line);
+                }
+                else if (arg == "-pre")
+                {
+                    if (!AssertMoreArguments(argQueue, "-pre option expects a single argument")) return;
 
-                        // Pop the argument and add it to the referenced-assemblies set:
-                        string ra = argQueue.Dequeue();
-                        if (!reffedAssemblies.Contains(ra))
-                            reffedAssemblies.Add(ra);
-                    }
-                    else if (arg == "-u")
-                    {
-                        if (!AssertMoreArguments(argQueue, "-u option expects a namespace name")) return;
+                    // Append the argument as a line of code in the LINQ query:
+                    string line = argQueue.Dequeue();
+                    sbPre.AppendLine(line);
+                }
+                else if (arg == "-post")
+                {
+                    if (!AssertMoreArguments(argQueue, "-post option expects a single argument")) return;
 
-                        // Pop the argument and add it to the using-namespaces set:
-                        string ns = argQueue.Dequeue();
-                        if (!usingNamespaces.Contains(ns))
-                            usingNamespaces.Add(ns);
-                    }
-                    else if (arg == "-nl")
-                    {
-                        newLine = Environment.NewLine;
-                    }
-                    else if (arg == "-lf")
-                    {
-                        newLine = "\n";
-                    }
-                    else if (arg == "-crlf")
-                    {
-                        newLine = "\r\n";
-                    }
-                    else if (arg == "-0")
-                    {
-                        newLine = "\0";
-                    }
-                    else if (arg == "-sp")
-                    {
-                        newLine = " ";
-                    }
-                    else
-                    {
-                        Console.Error.WriteLine("Unrecognized option \"{0}\"!", arg);
-                        Environment.ExitCode = -2;
-                        return;
-                    }
+                    // Append the argument as a line of code in the LINQ query:
+                    string line = argQueue.Dequeue();
+                    sbPost.AppendLine(line);
+                }
+                else if (arg == "-a")
+                {
+                    if (!AssertMoreArguments(argQueue, "-a option expects a string argument")) return;
+
+                    // Pop the argument and add it to the args list:
+                    string sa = argQueue.Dequeue();
+                    linqArgList.Add(sa);
+                }
+                else if (arg == "-r")
+                {
+                    if (!AssertMoreArguments(argQueue, "-r option expects an assembly name")) return;
+
+                    // Pop the argument and add it to the referenced-assemblies set:
+                    string ra = argQueue.Dequeue();
+                    if (!reffedAssemblies.Contains(ra))
+                        reffedAssemblies.Add(ra);
+                }
+                else if (arg == "-u")
+                {
+                    if (!AssertMoreArguments(argQueue, "-u option expects a namespace name")) return;
+
+                    // Pop the argument and add it to the using-namespaces set:
+                    string ns = argQueue.Dequeue();
+                    if (!usingNamespaces.Contains(ns))
+                        usingNamespaces.Add(ns);
+                }
+                else if (arg == "-nl")
+                {
+                    newLine = Environment.NewLine;
+                }
+                else if (arg == "-lf")
+                {
+                    newLine = "\n";
+                }
+                else if (arg == "-crlf")
+                {
+                    newLine = "\r\n";
+                }
+                else if (arg == "-0")
+                {
+                    newLine = "\0";
+                }
+                else if (arg == "-sp")
+                {
+                    newLine = " ";
+                }
+                else if (arg == "-pipe")
+                {
+                    newLine = "|";
                 }
                 else
                 {
-                    // Append the argument as a line of code in the LINQ query:
-                    sbLinq.AppendLine(arg);
+                    Console.Error.WriteLine("Unrecognized option \"{0}\"!", arg);
+                    Environment.ExitCode = -2;
+                    return;
                 }
             }
-
             string linqQueryCode = sbLinq.ToString();
             if (linqQueryCode.Length == 0)
             {
@@ -143,6 +227,11 @@ namespace LinqFilter
             var options = new CompilerParameters();
             options.ReferencedAssemblies.AddRange(reffedAssemblies.ToArray());
 
+            string generatedCode = sbPre.ToString() + @"
+        var query =
+" + sbLinq.ToString() + @";
+" + sbPost.ToString();
+
             // NOTE: Yes, I realize this is easily injectible. You should only be running this on your local machine
             // and so you implicitly trust yourself to do nothing nefarious to yourself. If you're trying to subvert
             // the mechanisms of the static method, then you've missed the point of this tool.
@@ -160,8 +249,7 @@ public class DynamicQuery
 {
     public static IEnumerable<string> GetQuery(IEnumerable<string> lines, string[] args)
     {
-        var query =
-" + sbLinq.ToString() + @";
+" + generatedCode + @"
         return query;
     }
 }"
@@ -171,8 +259,8 @@ public class DynamicQuery
             // Check compilation errors:
             if (results.Errors.Count > 0)
             {
-                int lineOffset = 6 + usingNamespaces.Count;
-                string[] linqQueryLines = StreamLines(new StringReader(sbLinq.ToString())).ToArray();
+                int lineOffset = 5 + usingNamespaces.Count;
+                string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
 
                 foreach (CompilerError error in results.Errors)
                 {
@@ -196,42 +284,66 @@ public class DynamicQuery
             IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[2] { lines, linqArgs });
 
             // Run the filter:
-            foreach (string line in lineQuery)
+            try
             {
-                Console.Out.Write(line);
-                Console.Out.Write(newLine);
+                foreach (string line in lineQuery)
+                {
+                    Console.Out.Write(line);
+                    Console.Out.Write(newLine);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
             }
         }
 
         private static void DisplayUsage()
         {
             Console.Error.WriteLine(
-@"LinqFilter.exe [<line of LINQ code> | -i [filename] ] ...
+@"LinqFilter.exe <options> ...
 
-Each non-option argument is appended line-by-line to form a LINQ query
-expression. This query is run over the stdin lines of input to produce
-stdout lines of output.
+-q [line]      to append a line of code to the 'query' buffer (see below).
+-pre [code]    to append a line of code to the 'pre' buffer (see below).
+-post [cost]   to append a line of code to the 'post' buffer (see below).
 
--a [arg]       to append to the `args` string[] passed to the LINQ query.
 -i [filename]  is used to import a section of lines of LINQ query expression
                code from a file. This option can be repeated as many times in
                order to compose larger queries from files containing partial
                bits of code.
+
+               Comments beginning with //- are interpreted inline as
+               arguments. -q, -pre, and -post change the target buffer to
+               append lines from the input file to.
+
 -u [namespace] is used to add a `using namespace;` line.
--r [assembly]  is used to add a reference to a required assembly.
+-r [assembly]  is used to add a reference to a required assembly (can be a
+               path or system assembly name, must end with '.dll').
+
+-a [arg]       to append to the `args` string[] passed to the LINQ query.
+
 -lf            sets output delimiter to ""\n""
 -crlf          sets output delimiter to ""\r\n""
 -0             sets output delimiter to ""\0"" (NUL char)
 -sp            sets output delimiter to "" "" (single space)
+-pipe          sets output delimiter to ""|"" (vertical pipe char)
 -nl            sets output delimiter to Environment.NewLine (default)
 
-The final constructed query must be of the form:
+The 'query' buffer must be of the form:
    from <range variable> in lines
    ...
    select <string variable>
+It should not end with a semicolon.
 
 The resulting type of the query must be `IEnumerable<string>`. The source
-is an `IEnumerable<string>` named `lines`.");
+is an `IEnumerable<string>` named `lines`.
+
+The 'pre' buffer is lines of C# code placed before the LINQ query assignment
+statement used in order to set up one-time local method variables and
+do pre-query validation work.
+
+The 'post' buffer is lines of C# code placed after the LINQ query assignment
+statement.");
         }
 
         private static IEnumerable<string> StreamLines(TextReader textReader)
