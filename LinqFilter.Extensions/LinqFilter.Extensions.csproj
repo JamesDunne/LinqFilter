@@ -5,11 +5,11 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProductVersion>9.0.30729</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{5277B6CB-4DB1-456E-A863-C264047B6DD8}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <ProjectGuid>{379864B8-55D7-472A-9DA1-5C46E73BBD43}</ProjectGuid>
+    <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>LinqFilter</RootNamespace>
-    <AssemblyName>LinqFilter</AssemblyName>
+    <RootNamespace>LinqFilter.Extensions</RootNamespace>
+    <AssemblyName>LinqFilter.Extensions</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -45,14 +45,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Program.cs" />
+    <Compile Include="CaseMatch.cs" />
+    <Compile Include="Extensions\AllTExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\LinqFilter.Extensions\LinqFilter.Extensions.csproj">
-      <Project>{379864B8-55D7-472A-9DA1-5C46E73BBD43}</Project>
-      <Name>LinqFilter.Extensions</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
@@ -62,8 +57,4 @@
   <Target Name="AfterBuild">
   </Target>
   -->
-  <PropertyGroup>
-    <PostBuildEvent>copy $(TargetPath) C:\TFS\TFC\
-copy "LinqFilter.Extensions.dll" C:\TFS\TFC\</PostBuildEvent>
-  </PropertyGroup>
 </Project>

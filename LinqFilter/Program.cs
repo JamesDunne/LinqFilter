@@ -22,8 +22,53 @@ namespace LinqFilter
             return true;
         }
 
+        static void DoNothing(string value)
+        {
+        }
+
         static void Main(string[] args)
         {
+#if false
+            // IMPROMPTU UNIT TESTS FTW!!!!
+            System.Diagnostics.Stopwatch sw1 = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < 5000000; ++i)
+            {
+                string value = ("hello" + i.ToString()).Case
+                (
+                    StringComparer.OrdinalIgnoreCase,
+                    new CaseMatch<string, string>("Hello", () => "world"),
+                    new CaseMatch<string, string>("world", () => "hello"),
+                    new CaseMatch<string, string>(() => "lol")
+                );
+                DoNothing(value);
+            }
+            sw1.Stop();
+
+            System.Diagnostics.Stopwatch sw2 = System.Diagnostics.Stopwatch.StartNew();
+            string tmp = "hello world".Substring(0, 5);
+            for (int i = 0; i < 5000000; ++i)
+            {
+                string value;
+                switch ("hello" + i.ToString())
+                {
+                    case "hello": value = "world"; break;
+                    case "world": value = "hello"; break;
+                    default: value = "lol"; break;
+                }
+                DoNothing(value);
+            }
+            sw2.Stop();
+
+            Console.WriteLine("Case<T>(): {0} ms", sw1.ElapsedMilliseconds);
+            Console.WriteLine("switch:    {0} ms", sw2.ElapsedMilliseconds);
+
+            // yields:
+            // Case<T>(): 1501 ms
+            // switch:    1102 ms
+            // ... which is totally awesome for me.
+            return;
+#endif
+
             if (args.Length == 0)
             {
                 DisplayUsage();
@@ -111,7 +156,8 @@ namespace LinqFilter
             HashSet<string> reffedAssemblies = new HashSet<string>(new string[] {
                 "mscorlib.dll",
                 "System.dll",
-                "System.Core.dll"
+                "System.Core.dll",
+                Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), "LinqFilter.Extensions.dll")
             }, StringComparer.InvariantCultureIgnoreCase);
 
             List<string> linqArgList = new List<string>(trueArgs.Count / 2);
@@ -235,31 +281,46 @@ namespace LinqFilter
             // NOTE: Yes, I realize this is easily injectible. You should only be running this on your local machine
             // and so you implicitly trust yourself to do nothing nefarious to yourself. If you're trying to subvert
             // the mechanisms of the static method, then you've missed the point of this tool.
-            var results = provider.CompileAssemblyFromSource(
-                options,
-                new string[] {
-                    // Add the using namespace lines:
-                    String.Join(Environment.NewLine, (
-                        from ns in usingNamespaces
-                        orderby ns
-                        select "using " + ns + ";"
-                    ).ToArray()) +
+            string[] dynamicSources = new string[] {
+                // Add the using namespace lines:
+                String.Join(Environment.NewLine, (
+                    from ns in usingNamespaces
+                    orderby ns
+                    select "using " + ns + ";"
+                ).ToArray()) +
 @"
 public class DynamicQuery
 {
+    private static bool Warning(bool condition, string errorFormat, params object[] args)
+    {
+        if (!condition) Console.Error.WriteLine(errorFormat, args);
+        return condition;
+    }
+
+    private static bool Error(bool condition, string errorFormat, params object[] args)
+    {
+        if (!condition)
+        {
+            Console.Error.WriteLine(errorFormat, args);
+            throw new Exception(String.Format(errorFormat, args));
+        }
+        return condition;
+    }
+
     public static IEnumerable<string> GetQuery(IEnumerable<string> lines, string[] args)
     {
 " + generatedCode + @"
         return query;
     }
 }"
-                }
-            );
+            };
+
+            var results = provider.CompileAssemblyFromSource(options, dynamicSources);
 
             // Check compilation errors:
             if (results.Errors.Count > 0)
             {
-                int lineOffset = 5 + usingNamespaces.Count;
+                int lineOffset = 21 + usingNamespaces.Count;
                 string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
 
                 foreach (CompilerError error in results.Errors)
@@ -270,7 +331,7 @@ public class DynamicQuery
                         if (j < 0) continue;
                         Console.Error.WriteLine(linqQueryLines[j]);
                     }
-                    Console.Error.WriteLine(new string(' ', error.Column - 1) + "^");
+                    Console.Error.WriteLine(new string(' ', Math.Max(0, error.Column - 1)) + "^");
                     Console.Error.WriteLine("{0} {1}: {2}", error.IsWarning ? "warning" : "error", error.ErrorNumber, error.ErrorText);
                 }
                 Environment.ExitCode = -1;
@@ -279,13 +340,13 @@ public class DynamicQuery
 
             string[] linqArgs = linqArgList.ToArray();
 
-            // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
-            var t = results.CompiledAssembly.GetType("DynamicQuery");
-            IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[2] { lines, linqArgs });
-
-            // Run the filter:
             try
             {
+                // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
+                var t = results.CompiledAssembly.GetType("DynamicQuery");
+                IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[2] { lines, linqArgs });
+
+                // Run the filter:
                 foreach (string line in lineQuery)
                 {
                     Console.Out.Write(line);
