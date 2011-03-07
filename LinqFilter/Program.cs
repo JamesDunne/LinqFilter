@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.CodeDom.Compiler;
 using System.Text;
+using LinqFilter.Extensions;
 
 namespace LinqFilter
 {
@@ -161,6 +162,7 @@ namespace LinqFilter
             }, StringComparer.InvariantCultureIgnoreCase);
 
             List<string> linqArgList = new List<string>(trueArgs.Count / 2);
+            bool useLineInfo = false;
 
             // Process cmdline arguments:
             Queue<string> argQueue = new Queue<string>(trueArgs);
@@ -248,6 +250,10 @@ namespace LinqFilter
                 {
                     newLine = "|";
                 }
+                else if (arg == "-ln")
+                {
+                    useLineInfo = true;
+                }
                 else
                 {
                     Console.Error.WriteLine("Unrecognized option \"{0}\"!", arg);
@@ -255,6 +261,8 @@ namespace LinqFilter
                     return;
                 }
             }
+
+            // Check if we have a query to execute:
             string linqQueryCode = sbLinq.ToString();
             if (linqQueryCode.Length == 0)
             {
@@ -265,6 +273,7 @@ namespace LinqFilter
 
             // Create an IEnumerable<string> that reads stdin line by line:
             IEnumerable<string> lines = StreamLines(Console.In);
+            IEnumerable<LineInfo> advLines = lines.Select((text, i) => new LineInfo(i + 1, text));
 
             // Create a C# v3.5 compiler provider:
             var provider = new Microsoft.CSharp.CSharpCodeProvider(new Dictionary<string, string> { { "CompilerVersion", "v3.5" } });
@@ -273,8 +282,9 @@ namespace LinqFilter
             var options = new CompilerParameters();
             options.ReferencedAssemblies.AddRange(reffedAssemblies.ToArray());
 
+            // Generate the method's code:
             string generatedCode = sbPre.ToString() + @"
-        var query =
+        IEnumerable<string> query =
 " + sbLinq.ToString() + @";
 " + sbPost.ToString();
 
@@ -307,7 +317,12 @@ public class DynamicQuery
         return condition;
     }
 
-    public static IEnumerable<string> GetQuery(IEnumerable<string> lines, string[] args)
+    private static IEnumerable<string> Single(string value)
+    {
+        return Enumerable.Repeat<string>(value, 1);
+    }
+
+    public static IEnumerable<string> GetQuery(IEnumerable<" + (useLineInfo ? "LinqFilter.Extensions.LineInfo" : "string") + @"> lines, string[] args)
     {
 " + generatedCode + @"
         return query;
@@ -320,12 +335,12 @@ public class DynamicQuery
             // Check compilation errors:
             if (results.Errors.Count > 0)
             {
-                int lineOffset = 21 + usingNamespaces.Count;
+                int lineOffset = 26 + usingNamespaces.Count;
                 string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
 
                 foreach (CompilerError error in results.Errors)
                 {
-                    for (int i = -3; i <= 0; ++i)
+                    for (int i = -2; i <= 0; ++i)
                     {
                         int j = error.Line + i - lineOffset;
                         if (j < 0) continue;
@@ -344,13 +359,23 @@ public class DynamicQuery
             {
                 // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
                 var t = results.CompiledAssembly.GetType("DynamicQuery");
-                IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(null, new object[2] { lines, linqArgs });
+                IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(
+                    null,
+                    new object[2] {
+                        // Select the proper IEnumerable<T> source:
+                        useLineInfo ? (object)advLines : (object)lines,
+                        linqArgs
+                    }
+                );
 
                 // Run the filter:
+                bool isFirstLine = true;
                 foreach (string line in lineQuery)
                 {
+                    if (!isFirstLine) Console.Out.Write(newLine);
+                    isFirstLine = false;
+
                     Console.Out.Write(line);
-                    Console.Out.Write(newLine);
                 }
             }
             catch (Exception ex)
@@ -364,9 +389,25 @@ public class DynamicQuery
             Console.Error.WriteLine(
 @"LinqFilter.exe <options> ...
 
+LinqFilter is a tool to dynamically compile and execute a C# LINQ expression
+typed as an `IEnumerable<string>` and output the resulting items from that
+query to `Console.Out`, where each item is delimited by newlines (or a custom
+delimiter of your choice).
+
+A local parameter `IEnumerable<string> lines` is given to the LINQ query
+which represents an enumeration over lines read in from `Console.In`.
+
 -q [line]      to append a line of code to the 'query' buffer (see below).
 -pre [code]    to append a line of code to the 'pre' buffer (see below).
 -post [cost]   to append a line of code to the 'post' buffer (see below).
+
+-ln            `lines` becomes an `IEnumerable<LineInfo>` which gives a
+               struct LineInfo {
+                  int LineNumber;
+                  string Text;
+               }
+               structure per each input line. Use this mode if you need
+               line numbers along with each line of text.
 
 -i [filename]  is used to import a section of lines of LINQ query expression
                code from a file. This option can be repeated as many times in
@@ -394,17 +435,29 @@ The 'query' buffer must be of the form:
    from <range variable> in lines
    ...
    select <string variable>
-It should not end with a semicolon.
+It should not end with a semicolon since it is an expression.
 
-The resulting type of the query must be `IEnumerable<string>`. The source
-is an `IEnumerable<string>` named `lines`.
+The resulting type of the query must be `IEnumerable<string>`.
 
 The 'pre' buffer is lines of C# code placed before the LINQ query assignment
 statement used in order to set up one-time local method variables and
 do pre-query validation work.
 
 The 'post' buffer is lines of C# code placed after the LINQ query assignment
-statement.");
+statement.
+
+EXAMPLES:
+LinqFilter -q ""from line in lines select line""
+will echo all input lines delimited by Environment.NewLine
+
+LinqFilter -ln -q ""from li in lines select li.LineNumber.ToString() + "" ""
+  + li.Text""
+will echo all input lines prefixed by their perceived input line numbers.
+
+LinqFilter -q ""from i in Enumerable.Range(1, 10) select i.ToString()""
+will output the numbers 1 to 10 on the console delimited by Environment.NewLine
+and ignore input lines.
+");
         }
 
         private static IEnumerable<string> StreamLines(TextReader textReader)

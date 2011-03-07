@@ -32,7 +32,7 @@ namespace System
         public static TResult Case<TValue, TResult>(this TValue value, IEqualityComparer<TValue> equalityComparer, params CaseMatch<TValue, TResult>[] cases)
         {
 #if true
-            // FIXME: nothing here to detect non-unique case values
+            // FIXME: need to detect non-unique case values?
             CaseMatch<TValue, TResult> defaultCase = null;
             if (equalityComparer == null) equalityComparer = EqualityComparer<TValue>.Default;
 

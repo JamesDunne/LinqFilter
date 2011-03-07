@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="CaseMatch.cs" />
     <Compile Include="Extensions\AllTExtensions.cs" />
+    <Compile Include="LineInfo.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
