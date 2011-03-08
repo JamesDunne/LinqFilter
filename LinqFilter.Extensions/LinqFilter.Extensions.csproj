@@ -46,7 +46,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CaseMatch.cs" />
-    <Compile Include="Extensions\AllTExtensions.cs" />
+    <Compile Include="Extensions\CaseExtensions.cs" />
+    <Compile Include="Extensions\StringExtensions.cs" />
     <Compile Include="LineInfo.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -11,63 +11,10 @@ namespace LinqFilter
 {
     class Program
     {
-        static string newLine = Environment.NewLine;
-
-        static bool AssertMoreArguments(Queue<string> argQueue, string message)
-        {
-            if (argQueue.Count == 0)
-            {
-                Console.Error.WriteLine(message);
-                Environment.ExitCode = -2;
-                return false;
-            }
-            return true;
-        }
-
-        static void DoNothing(string value)
-        {
-        }
-
         static void Main(string[] args)
         {
 #if false
-            // IMPROMPTU UNIT TESTS FTW!!!!
-            System.Diagnostics.Stopwatch sw1 = System.Diagnostics.Stopwatch.StartNew();
-            for (int i = 0; i < 5000000; ++i)
-            {
-                string value = ("hello" + i.ToString()).Case
-                (
-                    StringComparer.OrdinalIgnoreCase,
-                    new CaseMatch<string, string>("Hello", () => "world"),
-                    new CaseMatch<string, string>("world", () => "hello"),
-                    new CaseMatch<string, string>(() => "lol")
-                );
-                DoNothing(value);
-            }
-            sw1.Stop();
-
-            System.Diagnostics.Stopwatch sw2 = System.Diagnostics.Stopwatch.StartNew();
-            string tmp = "hello world".Substring(0, 5);
-            for (int i = 0; i < 5000000; ++i)
-            {
-                string value;
-                switch ("hello" + i.ToString())
-                {
-                    case "hello": value = "world"; break;
-                    case "world": value = "hello"; break;
-                    default: value = "lol"; break;
-                }
-                DoNothing(value);
-            }
-            sw2.Stop();
-
-            Console.WriteLine("Case<T>(): {0} ms", sw1.ElapsedMilliseconds);
-            Console.WriteLine("switch:    {0} ms", sw2.ElapsedMilliseconds);
-
-            // yields:
-            // Case<T>(): 1501 ms
-            // switch:    1102 ms
-            // ... which is totally awesome for me.
+            ImpromptuUnitTest();
             return;
 #endif
 
@@ -266,6 +213,10 @@ namespace LinqFilter
                 {
                     newLine = "|";
                 }
+                else if (arg == "-empty")
+                {
+                    newLine = String.Empty;
+                }
                 else if (arg == "-ln")
                 {
                     useLineInfo = true;
@@ -304,7 +255,7 @@ namespace LinqFilter
                     select "using " + ns + ";"
                 ).ToArray()) +
 @"
-public class DynamicQuery
+public static class DynamicQuery
 {
     private static bool Warning(bool condition, string errorFormat, params object[] args)
     {
@@ -427,81 +378,110 @@ public class DynamicQuery
 
         private static void DisplayUsage()
         {
-            Console.Error.WriteLine(
-@"LinqFilter.exe <options> ...
-
-LinqFilter is a tool to dynamically compile and execute a C# LINQ expression
-typed as an `IEnumerable<string>` and output the resulting items from that
-query to `Console.Out`, where each item is delimited by newlines (or a custom
-delimiter of your choice).
-
-A local parameter `IEnumerable<string> lines` is given to the LINQ query
-which represents an enumeration over lines read in from `Console.In`.
-
--q [line]      to append a line of code to the 'query' buffer (see below).
--pre [code]    to append a line of code to the 'pre' buffer (see below).
--post [code]   to append a line of code to the 'post' buffer (see below).
-
--ln            `lines` becomes an `IEnumerable<LineInfo>` which gives a
-               struct LineInfo {
-                  int LineNumber;
-                  string Text;
-               }
-               structure per each input line. Use this mode if you need
-               line numbers along with each line of text.
-
--i [filename]  is used to import a section of lines of LINQ query expression
-               code from a file. This option can be repeated as many times in
-               order to compose larger queries from files containing partial
-               bits of code.
-
-               Comments beginning with //- are interpreted inline as
-               arguments. -q, -pre, and -post change the target buffer to
-               append lines from the input file to.
-
--u [namespace] is used to add a `using namespace;` line.
--r [assembly]  is used to add a reference to a required assembly (can be a
-               path or system assembly name, must end with '.dll').
-
--a [arg]       to append to the `args` string[] passed to the LINQ query.
-
--lf            sets output delimiter to ""\n""
--crlf          sets output delimiter to ""\r\n""
--0             sets output delimiter to ""\0"" (NUL char)
--sp            sets output delimiter to "" "" (single space)
--pipe          sets output delimiter to ""|"" (vertical pipe char)
--nl            sets output delimiter to Environment.NewLine (default)
-
--clear-cache   deletes the dynamic assembly cache folder.
--display-cache displays the location of the dynamic assembly cache folder.
-
-The 'query' buffer must be of the form:
-   from <range variable> in lines
-   ...
-   select <string variable>
-It should not end with a semicolon since it is an expression.
-
-The resulting type of the query must be `IEnumerable<string>`.
-
-The 'pre' buffer is lines of C# code placed before the LINQ query assignment
-statement used in order to set up one-time local method variables and
-do pre-query validation work.
-
-The 'post' buffer is lines of C# code placed after the LINQ query assignment
-statement.
-
-EXAMPLES:
-LinqFilter -q ""from line in lines select line""
-will echo all input lines delimited by Environment.NewLine
-
-LinqFilter -ln -q ""from li in lines select li.LineNumber.ToString() + "" ""
-  + li.Text""
-will echo all input lines prefixed by their perceived input line numbers.
-
-LinqFilter -q ""from i in Enumerable.Range(1, 10) select i.ToString()""
-will output the numbers 1 to 10 on the console delimited by Environment.NewLine
-and ignore input lines.
-");
+            // Displays the error text wrapped to the console's width:
+            Console.Error.Write(
+                String.Join(
+                    Environment.NewLine,
+                    (
+                        from line in new string[] {
+@"LinqFilter.exe <options> ...",
+@"Version " + System.Reflection.Assembly.GetEntryAssembly().GetName().Version.ToString(4),
+@"(C)opyright 2011 James S. Dunne, bittwiddlers.org",
+@"Email = FirstName + ""."" + FirstName[0] + LastName + ""@gmail.com"";",
+@"",
+@"LinqFilter is a tool to dynamically compile and execute a C# LINQ expression typed as an `IEnumerable<string>` and output the resulting items from that query to `Console.Out`, where each item is delimited by newlines (or a custom delimiter of your choice).",
+@"",
+@"A local parameter `IEnumerable<string> lines` is given to the LINQ query which represents an enumeration over lines read in from `Console.In`.",
+@"",
+@"-q [line]      to append a line of code to the 'query' buffer (see below).",
+@"-pre [code]    to append a line of code to the 'pre' buffer (see below).",
+@"-post [code]   to append a line of code to the 'post' buffer (see below).",
+@"",
+@"-ln            `lines` becomes an `IEnumerable<LineInfo>` which gives a",
+@"               struct LineInfo {",
+@"                  int LineNumber;",
+@"                  string Text;",
+@"               }",
+@"               structure per each input line. Use this mode if you need line numbers along with each line of text.",
+@"",
+@"-i [filename]  is used to import a section of lines of LINQ query expression code from a file. This option can be repeated as many times in order to compose larger queries from files containing partial bits of code.",
+@"",
+@"               Comments beginning with //- are interpreted inline as arguments. -q, -pre, and -post change the target buffer to append lines from the input file to. All arguments except -i are allowed in //- comment lines. One argument per line.",
+@"",
+@"-u [namespace] is used to add a `using namespace;` line.",
+@"-r [assembly]  is used to add a reference to a required assembly (can be a path or system assembly name, must end with '.dll').",
+@"",
+@"-a [arg]       to append to the `args` string[] passed to the LINQ query.",
+@"",
+@"-lf            sets output delimiter to ""\n""",
+@"-crlf          sets output delimiter to ""\r\n""",
+@"-0             sets output delimiter to ""\0"" (NUL char)",
+@"-sp            sets output delimiter to "" "" (single space)",
+@"-pipe          sets output delimiter to ""|"" (vertical pipe char)",
+@"-empty         sets output delimiter to """" (empty string)",
+@"-nl            sets output delimiter to Environment.NewLine (default)",
+@"",
+@"-clear-cache   deletes the dynamic assembly cache folder.",
+@"-display-cache displays the location of the dynamic assembly cache folder.",
+@"",
+@"The 'query' buffer must be of the form:",
+@"   from <range variable> in lines",
+@"   ...",
+@"   select <string variable>",
+@"It should not end with a semicolon since it is an expression.",
+@"",
+@"The resulting type of the query must be `IEnumerable<string>`.",
+@"",
+@"The 'pre' buffer is lines of C# code placed before the LINQ query assignment statement used in order to set up one-time local method variables and do pre-query validation work.",
+@"",
+@"The 'post' buffer is lines of C# code placed after the LINQ query assignment statement.",
+@"",
+@"EXAMPLES:",
+@"LinqFilter -q ""from line in lines select line""",
+@"will echo all input lines delimited by Environment.NewLine",
+@"",
+@"LinqFilter -ln -q ""from li in lines select li.LineNumber.ToString() + \"" \"" + li.Text""",
+@"will echo all input lines prefixed by their perceived input line numbers.",
+@"",
+@"LinqFilter -q ""from i in Enumerable.Range(1, 10) select i.ToString()"" will output the numbers 1 to 10 on the console delimited by Environment.NewLine and ignore input lines.",
+@"",
+@"CASE EXPRESSION:",
+@"In LinqFilter.Extensions.dll (automatically imported for you) is a useful extension method that gives you a way to do a `switch` statement in an expression, generally referred to in functional programming as a case expression.",
+@"",
+@"Extension method signatures:",
+@"U Case<T, U>(this T value, params CaseMatch<T, U>[] cases)",
+@"U Case<T, U>(this T value, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
+@"U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, params CaseMatch<T, U>[] cases)",
+@"U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
+@"",
+@"class CaseMatch<T, U> {",
+@"  // specific matching case:",
+@"  .ctor(T testValue, Func<U> expression);",
+@"  // default case:",
+@"  .ctor(Func<U> expression);",
+@"}",
+@"",
+@"Example:",
+@"  from line in lines",
+@"  where line.Length > 0",
+@"  let action = line[0]",
+@"  select action.Case(",
+@"    () => ""UNKNOWN"", // default case",
+@"    Match.Case(""A"", () => ""ADD""),",
+@"    Match.Case(""D"", () => ""DELETE""),",
+@"    Match.Case(""M"", () => ""MODIFY"")",
+@"  )",
+@"",
+@"This example demonstrates how to invoke the Case extension method on any type T and have the method return a U value depending on the CaseMatch<T, U> arguments provided. Type inference is achieved via the static Match.Case method.",
+@"",
+@"The CaseMatch arguments are evaluated in order. There is no check to ensure unique case match values. The default case is the first parameter and is executed if no cases match."
+                        }
+                        // Wrap the lines to the window width:
+                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        select wrappedLine
+                    ).ToArray()
+                )
+            );
         }
 
         private static IEnumerable<string> StreamLines(TextReader textReader)
@@ -512,6 +492,63 @@ and ignore input lines.
                 yield return line;
             }
             yield break;
+        }
+
+        static string newLine = Environment.NewLine;
+
+        static bool AssertMoreArguments(Queue<string> argQueue, string message)
+        {
+            if (argQueue.Count == 0)
+            {
+                Console.Error.WriteLine(message);
+                Environment.ExitCode = -2;
+                return false;
+            }
+            return true;
+        }
+
+        static void ImpromptuUnitTest()
+        {
+            // IMPROMPTU UNIT TESTS FTW!!!!
+            System.Diagnostics.Stopwatch sw1 = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < 5000000; ++i)
+            {
+                string value = ("hello" + i.ToString()).Case(
+                    StringComparer.OrdinalIgnoreCase,
+                    () => "lol",    // default
+                    Match.Case("hello", () => "world"),
+                    Match.Case("world", () => "hello")
+                );
+                DoNothing(value);
+            }
+            sw1.Stop();
+
+            System.Diagnostics.Stopwatch sw2 = System.Diagnostics.Stopwatch.StartNew();
+            string tmp = "hello world".Substring(0, 5);
+            for (int i = 0; i < 5000000; ++i)
+            {
+                string value;
+                switch ("hello" + i.ToString())
+                {
+                    case "hello": value = "world"; break;
+                    case "world": value = "hello"; break;
+                    default: value = "lol"; break;
+                }
+                DoNothing(value);
+            }
+            sw2.Stop();
+
+            Console.WriteLine("Case(): {0} ms", sw1.ElapsedMilliseconds);
+            Console.WriteLine("switch: {0} ms", sw2.ElapsedMilliseconds);
+
+            // yields:
+            // Case(): 1501 ms
+            // switch: 1102 ms
+            // ... which is totally awesome for me.
+        }
+
+        static void DoNothing(string value)
+        {
         }
     }
 }
