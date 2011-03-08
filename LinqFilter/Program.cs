@@ -5,6 +5,7 @@ using System.Linq;
 using System.CodeDom.Compiler;
 using System.Text;
 using LinqFilter.Extensions;
+using System.Security.Cryptography;
 
 namespace LinqFilter
 {
@@ -74,6 +75,21 @@ namespace LinqFilter
             {
                 DisplayUsage();
                 Environment.ExitCode = -2;
+                return;
+            }
+
+            string codeCacheFolder = Path.Combine(Path.GetTempPath(), "LinqFilter");
+            if (args[0] == "-clear-cache")
+            {
+                if (Directory.Exists(codeCacheFolder)) Directory.Delete(codeCacheFolder, true);
+                Console.Error.WriteLine("Cleared dynamic assembly cache.");
+                Environment.ExitCode = 0;
+                return;
+            }
+            else if (args[0] == "-display-cache")
+            {
+                Console.Error.WriteLine(codeCacheFolder);
+                Environment.ExitCode = 0;
                 return;
             }
 
@@ -271,17 +287,6 @@ namespace LinqFilter
                 return;
             }
 
-            // Create an IEnumerable<string> that reads stdin line by line:
-            IEnumerable<string> lines = StreamLines(Console.In);
-            IEnumerable<LineInfo> advLines = lines.Select((text, i) => new LineInfo(i + 1, text));
-
-            // Create a C# v3.5 compiler provider:
-            var provider = new Microsoft.CSharp.CSharpCodeProvider(new Dictionary<string, string> { { "CompilerVersion", "v3.5" } });
-
-            // Add some basic assembly references:
-            var options = new CompilerParameters();
-            options.ReferencedAssemblies.AddRange(reffedAssemblies.ToArray());
-
             // Generate the method's code:
             string generatedCode = sbPre.ToString() + @"
         IEnumerable<string> query =
@@ -330,35 +335,71 @@ public class DynamicQuery
 }"
             };
 
-            var results = provider.CompileAssemblyFromSource(options, dynamicSources);
+            System.Reflection.Assembly compiledAssembly;
 
-            // Check compilation errors:
-            if (results.Errors.Count > 0)
+            // Compute the SHA1 of the generated code:
+            byte[] sha1 = SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(dynamicSources[0]));
+            StringBuilder sbSha1 = new StringBuilder(sha1.Length * 2);
+            foreach (byte b in sha1) sbSha1.AppendFormat("{0:X2}", b);
+            string codeSHA1 = sbSha1.ToString();
+
+            // Create the cached assembly directory in the system's Temp folder:
+            if (!Directory.Exists(codeCacheFolder)) Directory.CreateDirectory(codeCacheFolder);
+            string codeCacheFile = Path.Combine(codeCacheFolder, codeSHA1 + ".dll");
+
+            // If we have an existing assembly, load it up:
+            if (File.Exists(codeCacheFile))
             {
-                int lineOffset = 26 + usingNamespaces.Count;
-                string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
+                // Load the cached compiled assembly from an earlier run:
+                compiledAssembly = System.Reflection.Assembly.LoadFrom(codeCacheFile);
+            }
+            else
+            {
+                // Create a C# v3.5 compiler provider:
+                var provider = new Microsoft.CSharp.CSharpCodeProvider(new Dictionary<string, string> { { "CompilerVersion", "v3.5" } });
 
-                foreach (CompilerError error in results.Errors)
+                // Add some basic assembly references:
+                var options = new CompilerParameters();
+                options.ReferencedAssemblies.AddRange(reffedAssemblies.ToArray());
+                // Output to the expected cached assembly file:
+                options.OutputAssembly = codeCacheFile;
+
+                var results = provider.CompileAssemblyFromSource(options, dynamicSources);
+
+                // Check compilation errors:
+                if (results.Errors.Count > 0)
                 {
-                    for (int i = -2; i <= 0; ++i)
+                    int lineOffset = 26 + usingNamespaces.Count;
+                    string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
+
+                    foreach (CompilerError error in results.Errors)
                     {
-                        int j = error.Line + i - lineOffset;
-                        if (j < 0) continue;
-                        Console.Error.WriteLine(linqQueryLines[j]);
+                        for (int i = -2; i <= 0; ++i)
+                        {
+                            int j = error.Line + i - lineOffset;
+                            if (j < 0) continue;
+                            Console.Error.WriteLine(linqQueryLines[j]);
+                        }
+                        Console.Error.WriteLine(new string(' ', Math.Max(0, error.Column - 1)) + "^");
+                        Console.Error.WriteLine("{0} {1}: {2}", error.IsWarning ? "warning" : "error", error.ErrorNumber, error.ErrorText);
                     }
-                    Console.Error.WriteLine(new string(' ', Math.Max(0, error.Column - 1)) + "^");
-                    Console.Error.WriteLine("{0} {1}: {2}", error.IsWarning ? "warning" : "error", error.ErrorNumber, error.ErrorText);
+                    Environment.ExitCode = -1;
+                    return;
                 }
-                Environment.ExitCode = -1;
-                return;
+
+                compiledAssembly = results.CompiledAssembly;
             }
 
             string[] linqArgs = linqArgList.ToArray();
 
             try
             {
+                // Create an IEnumerable<string> that reads `Console.In` line by line:
+                IEnumerable<string> lines = StreamLines(Console.In);
+                IEnumerable<LineInfo> advLines = lines.Select((text, i) => new LineInfo(i + 1, text));
+
                 // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
-                var t = results.CompiledAssembly.GetType("DynamicQuery");
+                var t = compiledAssembly.GetType("DynamicQuery");
                 IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(
                     null,
                     new object[2] {
@@ -399,7 +440,7 @@ which represents an enumeration over lines read in from `Console.In`.
 
 -q [line]      to append a line of code to the 'query' buffer (see below).
 -pre [code]    to append a line of code to the 'pre' buffer (see below).
--post [cost]   to append a line of code to the 'post' buffer (see below).
+-post [code]   to append a line of code to the 'post' buffer (see below).
 
 -ln            `lines` becomes an `IEnumerable<LineInfo>` which gives a
                struct LineInfo {
@@ -430,6 +471,9 @@ which represents an enumeration over lines read in from `Console.In`.
 -sp            sets output delimiter to "" "" (single space)
 -pipe          sets output delimiter to ""|"" (vertical pipe char)
 -nl            sets output delimiter to Environment.NewLine (default)
+
+-clear-cache   deletes the dynamic assembly cache folder.
+-display-cache displays the location of the dynamic assembly cache folder.
 
 The 'query' buffer must be of the form:
    from <range variable> in lines
