@@ -114,6 +114,7 @@
     <PostBuildEvent>del /f /q "$(TargetDir)LinqFilter-Release.zip"
 "C:\Program Files\7-Zip\7z.exe" a "$(TargetDir)LinqFilter-Release.zip" "$(TargetPath)" "LinqFilter.Extensions.dll"
 copy "$(TargetPath)" C:\TFS\TFC\
-copy "LinqFilter.Extensions.dll" C:\TFS\TFC\</PostBuildEvent>
+copy "LinqFilter.Extensions.dll" C:\TFS\TFC\
+"$(TargetPath)" -clear-cache</PostBuildEvent>
   </PropertyGroup>
 </Project>

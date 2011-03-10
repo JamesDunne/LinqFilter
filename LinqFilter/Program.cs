@@ -242,7 +242,8 @@ namespace LinqFilter
             string generatedCode = sbPre.ToString() + @"
         IEnumerable<string> query =
 " + sbLinq.ToString() + @";
-" + sbPost.ToString();
+" + sbPost.ToString() + @"
+        return query;";
 
             // NOTE: Yes, I realize this is easily injectible. You should only be running this on your local machine
             // and so you implicitly trust yourself to do nothing nefarious to yourself. If you're trying to subvert
@@ -255,33 +256,11 @@ namespace LinqFilter
                     select "using " + ns + ";"
                 ).ToArray()) +
 @"
-public static class DynamicQuery
+public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 {
-    private static bool Warning(bool condition, string errorFormat, params object[] args)
-    {
-        if (!condition) Console.Error.WriteLine(errorFormat, args);
-        return condition;
-    }
-
-    private static bool Error(bool condition, string errorFormat, params object[] args)
-    {
-        if (!condition)
-        {
-            Console.Error.WriteLine(errorFormat, args);
-            throw new Exception(String.Format(errorFormat, args));
-        }
-        return condition;
-    }
-
-    private static IEnumerable<string> Single(string value)
-    {
-        return Enumerable.Repeat<string>(value, 1);
-    }
-
     public static IEnumerable<string> GetQuery(IEnumerable<" + (useLineInfo ? "LinqFilter.Extensions.LineInfo" : "string") + @"> lines, string[] args)
     {
 " + generatedCode + @"
-        return query;
     }
 }"
             };
@@ -320,7 +299,7 @@ public static class DynamicQuery
                 // Check compilation errors:
                 if (results.Errors.Count > 0)
                 {
-                    int lineOffset = 26 + usingNamespaces.Count;
+                    int lineOffset = 5 + usingNamespaces.Count;
                     string[] linqQueryLines = StreamLines(new StringReader(generatedCode)).ToArray();
 
                     foreach (CompilerError error in results.Errors)
@@ -370,9 +349,13 @@ public static class DynamicQuery
                     Console.Out.Write(line);
                 }
             }
+            catch (System.Reflection.TargetInvocationException tiex)
+            {
+                Console.Error.WriteLine(tiex.InnerException.ToString());
+            }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.ToString());
             }
         }
 

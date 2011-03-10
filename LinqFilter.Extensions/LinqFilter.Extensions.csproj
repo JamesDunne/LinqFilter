@@ -45,6 +45,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseQuery.cs" />
     <Compile Include="CaseMatch.cs" />
     <Compile Include="Extensions\CaseExtensions.cs" />
     <Compile Include="Extensions\StringExtensions.cs" />
