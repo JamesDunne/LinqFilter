@@ -8,18 +8,35 @@ namespace LinqFilter.Extensions
 {
     public abstract class BaseQuery
     {
-        protected static bool Warning(bool condition, string errorFormat, params object[] args)
+        protected sealed class FormatArgs
         {
-            if (!condition) Console.Error.WriteLine(errorFormat, args);
-            return condition;
+            public string Format { get; private set; }
+            public object[] Args { get; private set; }
+
+            public FormatArgs(string format, params object[] args)
+            {
+                this.Format = format;
+                this.Args = args;
+            }
         }
 
-        protected static bool Error(bool condition, string errorFormat, params object[] args)
+        protected static bool Warning(bool condition, Func<FormatArgs> formatMessage)
         {
             if (!condition)
             {
-                Console.Error.WriteLine(errorFormat, args);
-                throw new Exception(String.Format(errorFormat, args));
+                FormatArgs args = formatMessage();
+                Console.Error.WriteLine(args.Format, args.Args);
+            }
+            return condition;
+        }
+
+        protected static bool Error(bool condition, Func<FormatArgs> formatMessage)
+        {
+            if (!condition)
+            {
+                FormatArgs args = formatMessage();
+                Console.Error.WriteLine(args.Format, args.Args);
+                throw new Exception(String.Format(args.Format, args.Args));
             }
             return condition;
         }

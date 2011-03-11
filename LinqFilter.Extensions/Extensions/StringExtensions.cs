@@ -64,5 +64,11 @@ namespace System
             // Done.
             yield break;
         }
+
+        public static string NullTrim(this string value)
+        {
+            if (value == null) return null;
+            return value.Trim();
+        }
     }
 }

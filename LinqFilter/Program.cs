@@ -293,6 +293,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                 options.ReferencedAssemblies.AddRange(reffedAssemblies.ToArray());
                 // Output to the expected cached assembly file:
                 options.OutputAssembly = codeCacheFile;
+                options.IncludeDebugInformation = true;
 
                 var results = provider.CompileAssemblyFromSource(options, dynamicSources);
 
