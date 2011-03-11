@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.IO;
 
 namespace LinqFilter.Extensions
 {
@@ -21,6 +22,19 @@ namespace LinqFilter.Extensions
                 throw new Exception(String.Format(errorFormat, args));
             }
             return condition;
+        }
+
+        protected static IEnumerable<string> EnumerateLines(string path)
+        {
+            using (var sr = File.OpenText(path))
+            {
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    yield return line;
+                }
+                yield break;
+            }
         }
 
         protected static IEnumerable<string> Single(string value)
@@ -59,15 +73,54 @@ namespace LinqFilter.Extensions
             return sbDecoded.ToString();
         }
 
+        protected static string EncodeTabDelimited(string value)
+        {
+            StringBuilder sbResult = new StringBuilder(value.Length * 3 / 2);
+            foreach (char ch in value)
+            {
+                if (ch == '\t') sbResult.Append("\\t");
+                else if (ch == '\n') sbResult.Append("\\n");
+                else if (ch == '\r') sbResult.Append("\\r");
+                else if (ch == '\'') sbResult.Append("\\\'");
+                else if (ch == '\"') sbResult.Append("\\\"");
+                else if (ch == '\\') sbResult.Append("\\\\");
+                else
+                {
+                    sbResult.Append(ch);
+                }
+            }
+            return sbResult.ToString();
+        }
+
         protected static string[] SplitTabDelimited(string line)
         {
             string[] cols = line.Split('\t');
-            string[] result = new string[cols.Length];
-            for (int i = 0; i < cols.Length; ++i)
+            int length = cols.Length;
+            string[] result = new string[length];
+            for (int i = 0; i < length; ++i)
             {
-                result[i] = DecodeTabDelimited(cols[i]);
+                // Treat \0 string as null:
+                if (cols[i] == "\0") result[i] = null;
+                else result[i] = DecodeTabDelimited(cols[i]);
             }
             return result;
+        }
+
+        protected static string JoinTabDelimited(params string[] cols)
+        {
+            int length = cols.Length;
+            string[] tabEncoded = new string[length];
+            for (int i = 0; i < length; ++i)
+            {
+                if (cols[i] == null) tabEncoded[i] = "\0";
+                else tabEncoded[i] = EncodeTabDelimited(cols[i]);
+            }
+            return String.Join("\t", tabEncoded);
+        }
+
+        protected static string JoinTabDelimited(IEnumerable<string> cols)
+        {
+            return JoinTabDelimited(cols.ToArray());
         }
     }
 }
