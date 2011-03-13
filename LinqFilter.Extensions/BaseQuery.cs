@@ -139,5 +139,17 @@ namespace LinqFilter.Extensions
         {
             return JoinTabDelimited(cols.ToArray());
         }
+
+        protected static MaybeException<T> Try<T>(Func<T> throwableAction)
+        {
+            try
+            {
+                return throwableAction();
+            }
+            catch (Exception ex)
+            {
+                return (MaybeException<T>)ex;
+            }
+        }
     }
 }

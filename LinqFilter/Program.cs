@@ -213,6 +213,10 @@ namespace LinqFilter
                 {
                     newLine = "|";
                 }
+                else if (arg == "-comma")
+                {
+                    newLine = ",";
+                }
                 else if (arg == "-empty")
                 {
                     newLine = String.Empty;
@@ -403,6 +407,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"-sp            sets output delimiter to "" "" (single space)",
 @"-pipe          sets output delimiter to ""|"" (vertical pipe char)",
 @"-empty         sets output delimiter to """" (empty string)",
+@"-comma         sets output delimiter to "," (comma)",
 @"-nl            sets output delimiter to Environment.NewLine (default)",
 @"",
 @"-clear-cache   deletes the dynamic assembly cache folder.",
