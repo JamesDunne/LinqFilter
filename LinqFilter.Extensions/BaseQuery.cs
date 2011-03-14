@@ -135,7 +135,29 @@ namespace LinqFilter.Extensions
             return String.Join("\t", tabEncoded);
         }
 
+        protected static string JoinTabDelimited(params object[] cols)
+        {
+            int length = cols.Length;
+            string[] tabEncoded = new string[length];
+            for (int i = 0; i < length; ++i)
+            {
+                object col = cols[i];
+                if (col == null) tabEncoded[i] = "\0";
+                else
+                {
+                    string strValue = System.ComponentModel.TypeDescriptor.GetConverter(col.GetType()).ConvertToInvariantString(col);
+                    tabEncoded[i] = EncodeTabDelimited(strValue);
+                }
+            }
+            return String.Join("\t", tabEncoded);
+        }
+
         protected static string JoinTabDelimited(IEnumerable<string> cols)
+        {
+            return JoinTabDelimited(cols.ToArray());
+        }
+
+        protected static string JoinTabDelimited(IEnumerable<object> cols)
         {
             return JoinTabDelimited(cols.ToArray());
         }

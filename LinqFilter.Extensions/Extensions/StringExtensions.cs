@@ -70,5 +70,23 @@ namespace System
             if (value == null) return null;
             return value.Trim();
         }
+
+        public static int ToInt32Or(this string value, int defaultValue)
+        {
+            if (value == null) return defaultValue;
+
+            int intValue;
+            if (Int32.TryParse(value, out intValue)) return intValue;
+            return defaultValue;
+        }
+
+        public static int? ToInt32OrNull(this string value)
+        {
+            if (value == null) return null;
+
+            int intValue;
+            if (Int32.TryParse(value, out intValue)) return intValue;
+            return null;
+        }
     }
 }

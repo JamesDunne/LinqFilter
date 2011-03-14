@@ -127,6 +127,9 @@ namespace LinqFilter
             List<string> linqArgList = new List<string>(trueArgs.Count / 2);
             bool useLineInfo = false;
 
+            // Create the `lines` IEnumerable from Console.In:
+            IEnumerable<string> lines = StreamLines(Console.In);
+
             // Process cmdline arguments:
             Queue<string> argQueue = new Queue<string>(trueArgs);
             while (argQueue.Count > 0)
@@ -188,6 +191,22 @@ namespace LinqFilter
                     string ns = argQueue.Dequeue();
                     if (!usingNamespaces.Contains(ns))
                         usingNamespaces.Add(ns);
+                }
+                else if (arg == "-skip")
+                {
+                    if (!AssertMoreArguments(argQueue, "-skip option expects an integer argument")) return;
+
+                    string nStr = argQueue.Dequeue();
+                    int n = Int32.Parse(nStr);
+                    lines = lines.Skip(n);
+                }
+                else if (arg == "-take")
+                {
+                    if (!AssertMoreArguments(argQueue, "-take option expects an integer argument")) return;
+
+                    string nStr = argQueue.Dequeue();
+                    int n = Int32.Parse(nStr);
+                    lines = lines.Take(n);
                 }
                 else if (arg == "-nl")
                 {
@@ -330,7 +349,6 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
             try
             {
                 // Create an IEnumerable<string> that reads `Console.In` line by line:
-                IEnumerable<string> lines = StreamLines(Console.In);
                 IEnumerable<LineInfo> advLines = lines.Select((text, i) => new LineInfo(i + 1, text));
 
                 // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
@@ -400,6 +418,10 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"-r [assembly]  is used to add a reference to a required assembly (can be a path or system assembly name, must end with '.dll').",
 @"",
 @"-a [arg]       to append to the `args` string[] passed to the LINQ query.",
+@"",
+@"-skip [n]      to apply a Skip(n) to the lines IEnumerable before passing it to the LINQ query.",
+@"-take [n]      to apply a Take(n) to the lines IEnumerable before passing it to the LINQ query.",
+@"               Note that -skip and -take are order dependent. You can apply multiple skip and take operations in any order on the IEnumerable. Generally, a -skip [n] followed by a -take [n] is the preferred approach.",
 @"",
 @"-lf            sets output delimiter to ""\n""",
 @"-crlf          sets output delimiter to ""\r\n""",
