@@ -25,7 +25,7 @@ namespace LinqFilter.Extensions
             if (!condition)
             {
                 FormatArgs args = formatMessage();
-                Console.Error.WriteLine(args.Format, args.Args);
+                Console.Error.Write(Environment.NewLine + args.Format, args.Args);
             }
             return condition;
         }
@@ -35,7 +35,7 @@ namespace LinqFilter.Extensions
             if (!condition)
             {
                 FormatArgs args = formatMessage();
-                Console.Error.WriteLine(args.Format, args.Args);
+                Console.Error.Write(Environment.NewLine + args.Format, args.Args);
                 throw new Exception(String.Format(args.Format, args.Args));
             }
             return condition;
