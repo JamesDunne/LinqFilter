@@ -173,5 +173,13 @@ namespace LinqFilter.Extensions
                 return (MaybeException<T>)ex;
             }
         }
+
+        protected static T If<T>(bool condition, Func<T> then, Func<T> @else)
+        {
+            if (condition)
+                return then();
+            else
+                return @else();
+        }
     }
 }
