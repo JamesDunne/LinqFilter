@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using System.CodeDom.Compiler;
 using System.Text;
 using LinqFilter.Extensions;
@@ -114,7 +115,8 @@ namespace LinqFilter
             HashSet<string> usingNamespaces = new HashSet<string>(new string[] {
                 "System",
                 "System.Collections.Generic",
-                "System.Linq"
+                "System.Linq",
+                "System.Linq.Expressions",
             });
 
             HashSet<string> reffedAssemblies = new HashSet<string>(new string[] {
@@ -240,6 +242,13 @@ namespace LinqFilter
                 {
                     newLine = String.Empty;
                 }
+                else if (arg == "-d")
+                {
+                    if (!AssertMoreArguments(argQueue, "-d option expects a delimiter argument")) return;
+
+                    // Pop the argument and set it as the output delimiter:
+                    newLine = argQueue.Dequeue();
+                }
                 else if (arg == "-ln")
                 {
                     useLineInfo = true;
@@ -262,9 +271,12 @@ namespace LinqFilter
             }
 
             // Generate the method's code:
+            // We use the Expression<> type to force the query to be compiled as an expression. This
+            // explicitly disallows the usage of statements in the query. If a statement is used it
+            // will generate a compiler error.
             string generatedCode = sbPre.ToString() + @"
-        IEnumerable<string> query =
-" + sbLinq.ToString() + @";
+        Expression<Func<IEnumerable<string>>> query = () => (
+" + sbLinq.ToString() + @");
 " + sbPost.ToString() + @"
         return query;";
 
@@ -281,7 +293,7 @@ namespace LinqFilter
 @"
 public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 {
-    public static IEnumerable<string> GetQuery(IEnumerable<" + (useLineInfo ? "LinqFilter.Extensions.LineInfo" : "string") + @"> lines, string[] args)
+    public static Expression<Func<IEnumerable<string>>> GetQuery(IEnumerable<" + (useLineInfo ? "LinqFilter.Extensions.LineInfo" : "string") + @"> lines, string[] args)
     {
 " + generatedCode + @"
     }
@@ -353,7 +365,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 
                 // Find the compiled assembly's DynamicQuery type and execute its static GetQuery method:
                 var t = compiledAssembly.GetType("DynamicQuery");
-                IEnumerable<string> lineQuery = (IEnumerable<string>)t.GetMethod("GetQuery").Invoke(
+                Expression<Func<IEnumerable<string>>> getLineQuery = (Expression<Func<IEnumerable<string>>>)t.GetMethod("GetQuery").Invoke(
                     null,
                     new object[2] {
                         // Select the proper IEnumerable<T> source:
@@ -362,7 +374,12 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                     }
                 );
 
-                // Run the filter:
+                // Compile the expression tree to get a delegate that gives us our query:
+                Func<IEnumerable<string>> retrieveQuery = getLineQuery.Compile();
+                // Invoke the compiled delegate to get the actual query:
+                IEnumerable<string> lineQuery = retrieveQuery();
+
+                // Run the filter through the query and produce output lines from the string items yielded by the query:
                 bool isFirstLine = true;
                 foreach (string line in lineQuery)
                 {
@@ -431,6 +448,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"-empty         sets output delimiter to """" (empty string)",
 @"-comma         sets output delimiter to "," (comma)",
 @"-nl            sets output delimiter to Environment.NewLine (default)",
+@"-d <delimiter> sets output delimiter to the provided argument",
 @"",
 @"-clear-cache   deletes the dynamic assembly cache folder.",
 @"-display-cache displays the location of the dynamic assembly cache folder.",
