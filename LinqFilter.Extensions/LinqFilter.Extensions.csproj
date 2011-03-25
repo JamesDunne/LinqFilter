@@ -49,6 +49,7 @@
     <Compile Include="CaseMatch.cs" />
     <Compile Include="Extensions\CaseExtensions.cs" />
     <Compile Include="Extensions\DictionaryExtensions.cs" />
+    <Compile Include="Extensions\MutationExtensions.cs" />
     <Compile Include="Extensions\StringExtensions.cs" />
     <Compile Include="LineInfo.cs" />
     <Compile Include="MaybeException.cs" />
