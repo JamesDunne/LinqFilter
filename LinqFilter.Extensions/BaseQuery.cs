@@ -45,13 +45,18 @@ namespace LinqFilter.Extensions
         {
             using (var sr = File.OpenText(path))
             {
-                string line;
-                while ((line = sr.ReadLine()) != null)
-                {
-                    yield return line;
-                }
-                yield break;
+                return EnumerateLines(sr);
             }
+        }
+
+        protected static IEnumerable<string> EnumerateLines(TextReader reader)
+        {
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                yield return line;
+            }
+            yield break;
         }
 
         protected static IEnumerable<string> Single(string value)
@@ -180,6 +185,13 @@ namespace LinqFilter.Extensions
                 return then();
             else
                 return @else();
+        }
+
+        protected static bool Do(params Action[] actions)
+        {
+            foreach (Action action in actions)
+                action();
+            return true;
         }
     }
 }

@@ -7,6 +7,8 @@ using System.CodeDom.Compiler;
 using System.Text;
 using LinqFilter.Extensions;
 using System.Security.Cryptography;
+using System.Diagnostics;
+using System.Threading;
 
 namespace LinqFilter
 {
@@ -41,7 +43,7 @@ namespace LinqFilter
                 return;
             }
 
-            // TODO: Imported files via -i option cannot include other files with a //-i comment line.
+            // TODO: Imported files via -i option CANNOT include other files with a //-i comment line.
             List<string> trueArgs = new List<string>(args.Length);
             for (int i = 0; i < args.Length; ++i)
             {
@@ -132,6 +134,11 @@ namespace LinqFilter
             // Create the `lines` IEnumerable from Console.In:
             IEnumerable<string> lines = StreamLines(Console.In);
 
+            bool execMode = false;
+            int execNumProcesses = 0;
+            string execPath = null;
+            string execArgs = null;
+
             // Process cmdline arguments:
             Queue<string> argQueue = new Queue<string>(trueArgs);
             while (argQueue.Count > 0)
@@ -209,6 +216,22 @@ namespace LinqFilter
                     string nStr = argQueue.Dequeue();
                     int n = Int32.Parse(nStr);
                     lines = lines.Take(n);
+                }
+                else if (arg == "-exec")
+                {
+                    // -exec <N> <path to EXE>
+                    // Creates N process instances of the given executable and outputs each line returned from the
+                    // query to each process's stdin in a round robin fashion until the query terminates. The output of
+                    // LinqFilter to stdout then becomes the lines of stdout from each executed process prefixed with
+                    // the slot # assigned to the process followed by a TAB '\t' character. Output lines may appear in
+                    // any order by slot # but each process's output order is retained.
+                    execMode = true;
+                    execNumProcesses = Int32.Parse(argQueue.Dequeue());
+                    execPath = argQueue.Dequeue();
+                }
+                else if (arg == "-execargs")
+                {
+                    execArgs = argQueue.Dequeue();
                 }
                 else if (arg == "-nl")
                 {
@@ -380,13 +403,86 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                 IEnumerable<string> lineQuery = retrieveQuery();
 
                 // Run the filter through the query and produce output lines from the string items yielded by the query:
-                bool isFirstLine = true;
-                foreach (string line in lineQuery)
+                if (execMode)
                 {
-                    if (!isFirstLine) Console.Out.Write(newLine);
-                    isFirstLine = false;
+                    // Spawn N processes:
+                    Thread[][] copyThread = new Thread[execNumProcesses][];
+                    Process[] prcs = new Process[execNumProcesses];
+                    bool[] isFirstLine = new bool[execNumProcesses];
 
-                    Console.Out.Write(line);
+                    for (int p = 0; p < execNumProcesses; ++p)
+                    {
+                        isFirstLine[p] = true;
+                        
+                        ProcessStartInfo psi;
+                        if (execArgs != null)
+                            psi = new ProcessStartInfo(execPath, execArgs);
+                        else
+                            psi = new ProcessStartInfo(execPath);
+
+                        psi.RedirectStandardInput = true;
+                        psi.RedirectStandardOutput = true;
+                        psi.RedirectStandardError = true;
+                        psi.UseShellExecute = false;
+                        psi.CreateNoWindow = true;
+
+                        prcs[p] = Process.Start(psi);
+                        
+                        // Create a thread to read from process's stdout and write to our stdout:
+                        copyThread[p] = new Thread[2];
+
+                        int slot = p + 1;
+                        copyThread[p][0] = new Thread(new ParameterizedThreadStart(StreamCopy));
+                        copyThread[p][0].Start(new StreamCopyState(
+                            prcs[p].StandardOutput,
+                            Console.Out,
+                            (line) => String.Format("{0}\t{1}", slot, line),
+                            (ex) => Console.Error.WriteLine("{0}\t{1}", slot, ex.ToString())
+                        ));
+
+                        copyThread[p][1] = new Thread(new ParameterizedThreadStart(StreamCopy));
+                        copyThread[p][1].Start(new StreamCopyState(
+                            prcs[p].StandardError,
+                            Console.Error,
+                            (line) => String.Format("{0}\t{1}", slot, line),
+                            (ex) => Console.Error.WriteLine("{0}\t{1}", slot, ex.ToString())
+                        ));
+                    }
+
+                    // Enumerate lines of the query and output each line in a round-robin fashion to
+                    // each process:
+                    int currP = 0;
+                    foreach (string line in lineQuery)
+                    {
+                        if (!isFirstLine[currP])
+                            prcs[currP].StandardInput.Write(newLine);
+                        else
+                            isFirstLine[currP] = false;
+
+                        prcs[currP].StandardInput.Write(line);
+                        
+                        // Advance to next process to write to:
+                        currP = (currP + 1) % execNumProcesses;
+                    }
+
+                    // Close stdin for each process:
+                    for (int p = 0; p < execNumProcesses; ++p)
+                    {
+                        prcs[p].StandardInput.Close();
+                        copyThread[p][0].Join();
+                        copyThread[p][1].Join();
+                    }
+                }
+                else
+                {
+                    bool isFirstLine = true;
+                    foreach (string line in lineQuery)
+                    {
+                        if (!isFirstLine) Console.Out.Write(newLine);
+                        isFirstLine = false;
+
+                        Console.Out.Write(line);
+                    }
                 }
             }
             catch (System.Reflection.TargetInvocationException tiex)
@@ -396,6 +492,44 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
             catch (Exception ex)
             {
                 Console.Error.WriteLine(ex.ToString());
+            }
+        }
+
+        class StreamCopyState
+        {
+            public TextReader Reader { get; private set; }
+            public TextWriter Writer { get; private set; }
+            public Func<string, string> ProcessLine { get; private set; }
+            public Action<Exception> HandleException { get; private set; }
+
+            public StreamCopyState(TextReader reader, TextWriter writer, Func<string, string> processLine, Action<Exception> handleException)
+            {
+                this.Reader = reader;
+                this.Writer = writer;
+                this.ProcessLine = processLine;
+                this.HandleException = handleException;
+            }
+        }
+
+        private static void StreamCopy(object threadState)
+        {
+            StreamCopyState state = (StreamCopyState)threadState;
+            try
+            {
+                string line;
+                while ((line = state.Reader.ReadLine()) != null)
+                {
+                    string outline = line;
+                    if (state.ProcessLine != null)
+                        outline = state.ProcessLine(line);
+
+                    state.Writer.WriteLine(outline);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (state.HandleException != null)
+                    state.HandleException(ex);
             }
         }
 
