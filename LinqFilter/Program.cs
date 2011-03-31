@@ -5,10 +5,11 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.CodeDom.Compiler;
 using System.Text;
-using LinqFilter.Extensions;
 using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Threading;
+using WellDunne.Extensions;
+using System.Configuration;
 
 namespace LinqFilter
 {
@@ -59,6 +60,24 @@ namespace LinqFilter
                     // Pop the argument and load the file:
                     ++i;
                     string path = args[i];
+
+                    if (!File.Exists(path))
+                    {
+                        // Try the global scripts path:
+                        string globalScriptsPath = ConfigurationManager.AppSettings["GlobalScriptsPath"] ?? Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+                        path = Path.Combine(globalScriptsPath, path);
+                        if (!File.Exists(path))
+                        {
+                            Console.Error.WriteLine("Could not locate '{0}' in current directory '{1}' or global scripts path '{2}'",
+                                args[i],
+                                Environment.CurrentDirectory,
+                                globalScriptsPath
+                            );
+                            Environment.ExitCode = -2;
+                            return;
+                        }
+                    }
+
                     string[] tmpCodeLines = File.ReadAllLines(path);
                     string lineArg = "-q";
 
@@ -102,6 +121,21 @@ namespace LinqFilter
                         }
                     }
                 }
+                else if ((args[i] == "-?") || (args[i] == "-help"))
+                {
+                    DisplayUsage();
+                    return;
+                }
+                else if (args[i] == "-help-extensions")
+                {
+                    DisplayExtensionsUsage();
+                    return;
+                }
+                else if (args[i] == "-help-examples")
+                {
+                    DisplayExamples();
+                    return;
+                }
                 else
                 {
                     trueArgs.Add(args[i]);
@@ -125,7 +159,7 @@ namespace LinqFilter
                 "mscorlib.dll",
                 "System.dll",
                 "System.Core.dll",
-                Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), "LinqFilter.Extensions.dll")
+                Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), "WellDunne.Extensions.dll")
             }, StringComparer.InvariantCultureIgnoreCase);
 
             List<string> linqArgList = new List<string>(trueArgs.Count / 2);
@@ -217,9 +251,15 @@ namespace LinqFilter
                     int n = Int32.Parse(nStr);
                     lines = lines.Take(n);
                 }
-                else if (arg == "-exec")
+                else if (arg == "-f")
                 {
-                    // -exec <N> <path to EXE>
+                    // Use the default filter query:
+                    sbLinq = new StringBuilder("from line in lines select line");
+                    // TODO: make sure no more -q options can be accepted.
+                }
+                else if (arg == "-e")
+                {
+                    // -e <N> <path to EXE>
                     // Creates N process instances of the given executable and outputs each line returned from the
                     // query to each process's stdin in a round robin fashion until the query terminates. The output of
                     // LinqFilter to stdout then becomes the lines of stdout from each executed process prefixed with
@@ -229,9 +269,11 @@ namespace LinqFilter
                     execNumProcesses = Int32.Parse(argQueue.Dequeue());
                     execPath = argQueue.Dequeue();
                 }
-                else if (arg == "-execargs")
+                else if (arg == "--")
                 {
-                    execArgs = argQueue.Dequeue();
+                    // Take the remaining arguments as process start arguments:
+                    execArgs = String.Join(" ", argQueue.ToArray());
+                    break;
                 }
                 else if (arg == "-nl")
                 {
@@ -289,7 +331,6 @@ namespace LinqFilter
             if (linqQueryCode.Length == 0)
             {
                 DisplayUsage();
-                Environment.ExitCode = -2;
                 return;
             }
 
@@ -314,9 +355,9 @@ namespace LinqFilter
                     select "using " + ns + ";"
                 ).ToArray()) +
 @"
-public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
+public sealed class DynamicQuery : global::WellDunne.Extensions.BaseQuery
 {
-    public static Expression<Func<IEnumerable<string>>> GetQuery(IEnumerable<" + (useLineInfo ? "LinqFilter.Extensions.LineInfo" : "string") + @"> lines, string[] args)
+    public static Expression<Func<IEnumerable<string>>> GetQuery(IEnumerable<" + (useLineInfo ? "WellDunne.Extensions.LineInfo" : "string") + @"> lines, string[] args)
     {
 " + generatedCode + @"
     }
@@ -406,7 +447,9 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                 if (execMode)
                 {
                     // Spawn N processes:
+#if ListenWithThreads
                     Thread[][] copyThread = new Thread[execNumProcesses][];
+#endif
                     Process[] prcs = new Process[execNumProcesses];
                     bool[] isFirstLine = new bool[execNumProcesses];
 
@@ -428,6 +471,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 
                         prcs[p] = Process.Start(psi);
                         
+#if ListenWithThreads
                         // Create a thread to read from process's stdout and write to our stdout:
                         copyThread[p] = new Thread[2];
 
@@ -447,6 +491,25 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                             (line) => String.Format("{0}\t{1}", slot, line),
                             (ex) => Console.Error.WriteLine("{0}\t{1}", slot, ex.ToString())
                         ));
+#else
+                        int slot = p + 1;
+
+                        // Set the process's StandardOutput data received event to write to our Console.Out:
+                        prcs[p].OutputDataReceived += new DataReceivedEventHandler((object sender, DataReceivedEventArgs e) =>
+                        {
+                            Console.Out.WriteLine("{0}\t{1}", slot, e.Data);
+                        });
+
+                        // Set the process's StandardError data received event to write to our Console.Error:
+                        prcs[p].ErrorDataReceived += new DataReceivedEventHandler((object sender, DataReceivedEventArgs e) =>
+                        {
+                            Console.Error.WriteLine("{0}\t{1}", slot, e.Data);
+                        });
+
+                        // Begin the asynchronous read operations on the process's StandardOutput and StandardError:
+                        prcs[p].BeginOutputReadLine();
+                        prcs[p].BeginErrorReadLine();
+#endif
                     }
 
                     // Enumerate lines of the query and output each line in a round-robin fashion to
@@ -469,8 +532,14 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                     for (int p = 0; p < execNumProcesses; ++p)
                     {
                         prcs[p].StandardInput.Close();
+
+#if ListenWithThreads
                         copyThread[p][0].Join();
                         copyThread[p][1].Join();
+#else
+                        prcs[p].CancelOutputRead();
+                        prcs[p].CancelErrorRead();
+#endif
                     }
                 }
                 else
@@ -495,6 +564,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
             }
         }
 
+#if ListenWithThreads
         class StreamCopyState
         {
             public TextReader Reader { get; private set; }
@@ -532,8 +602,9 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
                     state.HandleException(ex);
             }
         }
+#endif
 
-        private static void DisplayUsage()
+        private static void DisplayHeader()
         {
             // Displays the error text wrapped to the console's width:
             Console.Error.Write(
@@ -549,49 +620,94 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"LinqFilter is a tool to dynamically compile and execute a C# LINQ expression typed as an `IEnumerable<string>` and output the resulting items from that query to `Console.Out`, where each item is delimited by newlines (or a custom delimiter of your choice).",
 @"",
 @"A local parameter `IEnumerable<string> lines` is given to the LINQ query which represents an enumeration over lines read in from `Console.In`.",
+}
+                        // Wrap the lines to the window width:
+                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        select wrappedLine
+                    ).ToArray()
+                )
+            );
+        }
+
+        private static void DisplayUsage()
+        {
+            DisplayHeader();
+            // Displays the error text wrapped to the console's width:
+            Console.Error.Write(
+                String.Join(
+                    Environment.NewLine,
+                    (
+                        from line in new string[] {
 @"",
-@"-q [line]      to append a line of code to the 'query' buffer (see below).",
-@"-pre [code]    to append a line of code to the 'pre' buffer (see below).",
-@"-post [code]   to append a line of code to the 'post' buffer (see below).",
+@"-q [line]         to append a line of code to the 'query' buffer (see below).",
+@"-pre [code]       to append a line of code to the 'pre' buffer (see below).",
+@"-post [code]      to append a line of code to the 'post' buffer (see below).",
 @"",
-@"-ln            `lines` becomes an `IEnumerable<LineInfo>` which gives a",
-@"               struct LineInfo {",
-@"                  int LineNumber;",
-@"                  string Text;",
-@"               }",
-@"               structure per each input line. Use this mode if you need line numbers along with each line of text.",
+@"-f                use default filter code 'from line in lines select line'.",
 @"",
-@"-i [filename]  is used to import a section of lines of LINQ query expression code from a file. This option can be repeated as many times in order to compose larger queries from files containing partial bits of code.",
+@"-e <N> <path>     executes N processes given the executable path and sends output lines from the query to each process in a round-robin fashion for data-parallel execution. StandardOuput and StandardError from each process is redirected and each output line is prefixed with the process number [1..N] followed by a TAB character.",
+@"-- <process args> stop processing arguments for LinqFilter and pass the rest of the command line to each process if -e is specified.",
 @"",
-@"               Comments beginning with //- are interpreted inline as arguments. -q, -pre, and -post change the target buffer to append lines from the input file to. All arguments except -i are allowed in //- comment lines. One argument per line.",
+@"-ln               `lines` becomes an `IEnumerable<LineInfo>` which gives a",
+@"                  struct LineInfo {",
+@"                     int LineNumber;",
+@"                     string Text;",
+@"                  }",
+@"                  structure per each input line. Use this mode if you need line numbers along with each line of text.",
 @"",
-@"-u [namespace] is used to add a `using namespace;` line.",
-@"-r [assembly]  is used to add a reference to a required assembly (can be a path or system assembly name, must end with '.dll').",
+@"-i [filename]     is used to import a section of lines of LINQ query expression code from a file. This option can be repeated as many times in order to compose larger queries from files containing partial bits of code.",
 @"",
-@"-a [arg]       to append to the `args` string[] passed to the LINQ query.",
+@"                  Comments beginning with //- are interpreted inline as arguments. -q, -pre, and -post change the target buffer to append lines from the input file to. All arguments except -i are allowed in //- comment lines. One argument per line.",
 @"",
-@"-skip [n]      to apply a Skip(n) to the lines IEnumerable before passing it to the LINQ query.",
-@"-take [n]      to apply a Take(n) to the lines IEnumerable before passing it to the LINQ query.",
-@"               Note that -skip and -take are order dependent. You can apply multiple skip and take operations in any order on the IEnumerable. Generally, a -skip [n] followed by a -take [n] is the preferred approach.",
+@"-u [namespace]    is used to add a `using namespace;` line.",
+@"-r [assembly]     is used to add a reference to a required assembly (can be a path or system assembly name, must end with '.dll').",
 @"",
-@"-lf            sets output delimiter to ""\n""",
-@"-crlf          sets output delimiter to ""\r\n""",
-@"-0             sets output delimiter to ""\0"" (NUL char)",
-@"-sp            sets output delimiter to "" "" (single space)",
-@"-pipe          sets output delimiter to ""|"" (vertical pipe char)",
-@"-empty         sets output delimiter to """" (empty string)",
-@"-comma         sets output delimiter to "," (comma)",
-@"-nl            sets output delimiter to Environment.NewLine (default)",
-@"-d <delimiter> sets output delimiter to the provided argument",
+@"-a [arg]          to append to the `args` string[] passed to the LINQ query.",
 @"",
-@"-clear-cache   deletes the dynamic assembly cache folder.",
-@"-display-cache displays the location of the dynamic assembly cache folder.",
+@"-skip [n]         to apply a Skip(n) to the lines IEnumerable before passing it to the LINQ query.",
+@"-take [n]         to apply a Take(n) to the lines IEnumerable before passing it to the LINQ query.",
+@"                  Note that -skip and -take are order dependent. You can apply multiple skip and take operations in any order on the IEnumerable. Generally, a -skip [n] followed by a -take [n] is the preferred approach.",
+@"",
+@"-lf               sets output delimiter to ""\n""",
+@"-crlf             sets output delimiter to ""\r\n""",
+@"-nl               sets output delimiter to Environment.NewLine (default)",
+@"-0                sets output delimiter to ""\0"" (NUL char)",
+@"-sp               sets output delimiter to "" "" (single space)",
+@"-pipe             sets output delimiter to ""|"" (vertical pipe char)",
+@"-empty            sets output delimiter to """" (empty string)",
+@"-comma            sets output delimiter to "","" (comma)",
+@"-d <delimiter>    sets output delimiter to the provided argument",
+@"",
+@"-clear-cache      deletes the dynamic assembly cache folder.",
+@"-display-cache    displays the location of the dynamic assembly cache folder.",
+@"",
+@"-help             displays this help text.",
+@"-help-extensions  displays help text on static methods and extension methods exposed for use in queries.",
+@"-help-examples    displays help text on example queries.",
 @"",
 @"The resulting type of the query must be `IEnumerable<string>`.",
 @"",
 @"The 'pre' buffer is lines of C# code placed before the LINQ query assignment statement used in order to set up one-time local method variables and do pre-query validation work.",
 @"",
-@"The 'post' buffer is lines of C# code placed after the LINQ query assignment statement.",
+@"The 'post' buffer is lines of C# code placed after the LINQ query assignment statement."
+                        }
+                        // Wrap the lines to the window width:
+                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        select wrappedLine
+                    ).ToArray()
+                )
+            );
+        }
+
+        private static void DisplayExamples()
+        {
+            DisplayHeader();
+            // Displays the error text wrapped to the console's width:
+            Console.Error.Write(
+                String.Join(
+                    Environment.NewLine,
+                    (
+                        from line in new string[] {
 @"",
 @"EXAMPLES:",
 @"LinqFilter -q ""from line in lines select line""",
@@ -601,15 +717,76 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"will echo all input lines prefixed by their perceived input line numbers.",
 @"",
 @"LinqFilter -q ""from i in Enumerable.Range(1, 10) select i.ToString()"" will output the numbers 1 to 10 on the console delimited by Environment.NewLine and ignore input lines.",
+                        }
+                        // Wrap the lines to the window width:
+                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        select wrappedLine
+                    ).ToArray()
+                )
+            );
+        }
+
+        private static void DisplayExtensionsUsage()
+        {
+            DisplayHeader();
+            // Displays the error text wrapped to the console's width:
+            Console.Error.Write(
+                String.Join(
+                    Environment.NewLine,
+                    (
+                        from line in new string[] {
+@"",
+@"Static methods available for use in queries:",
+@"  bool Warning(bool condition, Func<FormatArgs> formatMessage)",
+@"  bool Error(bool condition, Func<FormatArgs> formatMessage)",
+@"  IEnumerable<string> EnumerateLines(string path)",
+@"  IEnumerable<string> EnumerateLines(TextReader reader)",
+@"  IEnumerable<string> Single(string value)",
+@"  string DecodeTabDelimited(string value)",
+@"  string EncodeTabDelimited(string value)",
+@"  string[] SplitTabDelimited(string line)",
+@"  string JoinTabDelimited(params string[] cols)",
+@"  string JoinTabDelimited(params object[] cols)",
+@"  string JoinTabDelimited(IEnumerable<string> cols)",
+@"  string JoinTabDelimited(IEnumerable<object> cols)",
+@"  MaybeException<T> Try<T>(Func<T> throwableAction)",
+@"  T If<T>(bool condition, Func<T> then, Func<T> @else)",
+@"  bool Do(params Action[] actions)",
+@"",
+@"Extension methods:",
+@"  U Case<T, U>(this T value, params CaseMatch<T, U>[] cases)",
+@"  U Case<T, U>(this T value, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
+@"  U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, params CaseMatch<T, U>[] cases)",
+@"  U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
+@"  TValue GetValueOr<TKey, TValue>(this IDictionary<TKey, TValue> dict, TKey key, TValue defaultValue)",
+@"  TValue GetValueOr<TKey, TValue>(this IDictionary<TKey, TValue> dict, TKey key, Func<TValue> getDefaultValue)",
+@"  T Mutate<T>(this T[] array, int index, T setValue)",
+@"  T Mutate<T>(this IList<T> list, int index, T setValue)",
+@"  T MutateAdd<T>(this IList<T> list, T setValue)",
+@"  TValue Mutate<TKey, TValue>(this IDictionary<TKey, TValue> dict, TKey key, TValue setValue)",
+@"  IEnumerable<string> WordWrap(this string text, int columns)",
+@"  string NullTrim(this string value)",
+@"  int ToInt32Or(this string value, int defaultValue)",
+@"  int? ToInt32OrNull(this string value)",
+@"",
+@"Classes/structs exposed for use:",
+@"  struct LineInfo {",
+@"      int    LineNumber { get; }",
+@"      string Text       { get; }",
+@"  }",
+@"  class FormatArgs {",
+@"      FormatArgs(string format, params object[] args);",
+@"      string   Format { get; }",
+@"      object[] Args   { get; }",
+@"  }",
+@"  class MaybeException<T> {",
+@"      T         Value        { get; }",
+@"      Exception Exception    { get; }",
+@"      bool      IsSuccessful { get; }",
+@"  }",
 @"",
 @"CASE EXPRESSION:",
-@"In LinqFilter.Extensions.dll (automatically imported for you) is a useful extension method that gives you a way to do a `switch` statement in an expression, generally referred to in functional programming as a case expression.",
-@"",
-@"Extension method signatures:",
-@"U Case<T, U>(this T value, params CaseMatch<T, U>[] cases)",
-@"U Case<T, U>(this T value, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
-@"U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, params CaseMatch<T, U>[] cases)",
-@"U Case<T, U>(this T value, IEqualityComparer<T> equalityComparer, Func<U> defaultCase, params CaseMatch<T, U>[] cases)",
+@"In WellDunne.Extensions.dll (automatically imported for you) is a useful extension method that gives you a way to do a `switch` statement in an expression, generally referred to in functional programming as a case expression.",
 @"",
 @"Example:",
 @"  from line in lines",
@@ -624,7 +801,7 @@ public sealed class DynamicQuery : global::LinqFilter.Extensions.BaseQuery
 @"",
 @"This example demonstrates how to invoke the Case extension method on any type T and have the method return a U value depending on the CaseMatch<T, U> arguments provided. Type inference is achieved via the static Match.Case method.",
 @"",
-@"The CaseMatch arguments are evaluated in order. There is no check to ensure unique case match values. The default case is the first parameter and is executed if no cases match."
+@"The CaseMatch arguments are evaluated in order. There is no check to ensure unique case match values. The default case is the first parameter and is executed if no cases match.",
                         }
                         // Wrap the lines to the window width:
                         from wrappedLine in line.WordWrap(Console.WindowWidth - 1)

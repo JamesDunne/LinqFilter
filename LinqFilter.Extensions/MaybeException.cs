@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace LinqFilter.Extensions
+namespace WellDunne.Extensions
 {
     public sealed class MaybeException<T>
     {

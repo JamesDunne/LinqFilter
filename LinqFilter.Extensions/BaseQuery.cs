@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.IO;
 
-namespace LinqFilter.Extensions
+namespace WellDunne.Extensions
 {
     public abstract class BaseQuery
     {
