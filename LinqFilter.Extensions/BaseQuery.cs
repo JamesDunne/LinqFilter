@@ -43,9 +43,14 @@ namespace WellDunne.Extensions
 
         protected static IEnumerable<string> EnumerateLines(string path)
         {
-            using (var sr = File.OpenText(path))
+            using (var reader = File.OpenText(path))
             {
-                return EnumerateLines(sr);
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    yield return line;
+                }
+                yield break;
             }
         }
 
