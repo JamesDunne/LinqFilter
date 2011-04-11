@@ -95,7 +95,7 @@ namespace LinqFilter
 
                             string tmpArg = cmtLine.Substring(0, firstSpace);
 
-                            if ((tmpArg == "-q") || (tmpArg == "-pre") || (tmpArg == "-post"))
+                            if ((tmpArg == "-q") || (tmpArg == "-pre") || (tmpArg == "-c"))
                             {
                                 lineArg = tmpArg;
                             }
@@ -145,7 +145,7 @@ namespace LinqFilter
             // Start off a new StringBuilder with a reasonable expected capacity:
             StringBuilder sbLinq = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-q")).Sum(a => a.Length));
             StringBuilder sbPre = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-pre")).Sum(a => a.Length));
-            StringBuilder sbPost = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-post")).Sum(a => a.Length));
+            StringBuilder sbClass = new StringBuilder(trueArgs.Where((a, i) => (i >= 1) && (!a.StartsWith("-")) && (trueArgs[i - 1] == "-c")).Sum(a => a.Length));
 
             // Create the defaults for using-namespaces and referenced-assemblies sets:
             HashSet<string> usingNamespaces = new HashSet<string>(new string[] {
@@ -197,17 +197,17 @@ namespace LinqFilter
                 {
                     if (!AssertMoreArguments(argQueue, "-pre option expects a single argument")) return;
 
-                    // Append the argument as a line of code in the LINQ query:
+                    // Append the argument as a line of code in the PRE section:
                     string line = argQueue.Dequeue();
                     sbPre.AppendLine(line);
                 }
-                else if (arg == "-post")
+                else if (arg == "-c")
                 {
-                    if (!AssertMoreArguments(argQueue, "-post option expects a single argument")) return;
+                    if (!AssertMoreArguments(argQueue, "-c option expects a single argument")) return;
 
-                    // Append the argument as a line of code in the LINQ query:
+                    // Append the argument as a line of code in the CLASS section:
                     string line = argQueue.Dequeue();
-                    sbPost.AppendLine(line);
+                    sbClass.AppendLine(line);
                 }
                 else if (arg == "-a")
                 {
@@ -341,7 +341,6 @@ namespace LinqFilter
             string generatedCode = sbPre.ToString() + @"
         Expression<Func<IEnumerable<string>>> query = () => (
 " + sbLinq.ToString() + @");
-" + sbPost.ToString() + @"
         return query;";
 
             // NOTE: Yes, I realize this is easily injectible. You should only be running this on your local machine
@@ -355,12 +354,17 @@ namespace LinqFilter
                     select "using " + ns + ";"
                 ).ToArray()) +
 @"
-public sealed class DynamicQuery : global::WellDunne.Extensions.BaseQuery
+public sealed partial class DynamicQuery : global::WellDunne.Extensions.BaseQuery
 {
     public static Expression<Func<IEnumerable<string>>> GetQuery(IEnumerable<" + (useLineInfo ? "WellDunne.Extensions.LineInfo" : "string") + @"> lines, string[] args)
     {
 " + generatedCode + @"
     }
+}
+
+public sealed partial class DynamicQuery
+{
+" + sbClass.ToString() + @"
 }"
             };
 
@@ -641,7 +645,7 @@ public sealed class DynamicQuery : global::WellDunne.Extensions.BaseQuery
 new[] { @"" },
 new[] { @"-q [line]",           @"to append a line of code to the 'query' buffer (see below)." },
 new[] { @"-pre [code]",         @"to append a line of code to the 'pre' buffer (see below)." },
-new[] { @"-post [code]",        @"to append a line of code to the 'post' buffer (see below)." },
+new[] { @"-c [code]",           @"to append a line of code to the 'class' buffer (see below)." },
 new[] { @"" },
 new[] { @"-f",                  @"use default filter code 'from line in lines select line'." },
 new[] { @"" },
@@ -656,7 +660,7 @@ new[] { @"",                    @"}" },
 new[] { @"",                    @"structure per each input line. Use this mode if you need line numbers along with each line of text." },
 new[] { @"" },
 new[] { @"-i [filename]",       @"is used to import a section of lines of LINQ query expression code from a file. This option can be repeated as many times in order to compose larger queries from files containing partial bits of code." },
-new[] { @"",                    @"Comments beginning with //- are interpreted inline as arguments. -q, -pre, and -post change the target buffer to append lines from the input file to. All arguments except -i are allowed in //- comment lines. One argument per line." },
+new[] { @"",                    @"Comments beginning with //- are interpreted inline as arguments. -q, -pre, and -class change the target buffer to append lines from the input file to. All arguments except -i are allowed in //- comment lines. One argument per line." },
 new[] { @"" },
 new[] { @"-u [namespace]",      @"is used to add a `using namespace;` line." },
 new[] { @"-r [assembly]",       @"is used to add a reference to a required assembly (can be a path or system assembly name, must end with '.dll')." },
@@ -688,7 +692,7 @@ new[] { @"The resulting type of the query must be `IEnumerable<string>`." },
 new[] { @"" },
 new[] { @"The 'pre' buffer is lines of C# code placed before the LINQ query assignment statement used in order to set up one-time local method variables and do pre-query validation work." },
 new[] { @"" },
-new[] { @"The 'post' buffer is lines of C# code placed after the LINQ query assignment statement." }
+new[] { @"The 'class' buffer is lines of C# code placed within the dynamic class body, where you can declare structs and inner classes that you need for your query." }
             };
 
             // Displays the error text wrapped to the console's width:
