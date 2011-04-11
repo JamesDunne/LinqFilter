@@ -619,8 +619,7 @@ public sealed class DynamicQuery : global::WellDunne.Extensions.BaseQuery
                         from line in new string[] {
 @"LinqFilter.exe <options> ...",
 @"Version " + System.Reflection.Assembly.GetEntryAssembly().GetName().Version.ToString(4),
-@"(C)opyright 2011 James S. Dunne, bittwiddlers.org",
-@"Email = FirstName + ""."" + FirstName[0] + LastName + ""@gmail.com"";",
+@"(C)opyright 2011 James S. Dunne <linqfilter@bittwiddlers.org>",
 @"",
 @"LinqFilter is a tool to dynamically compile and execute a C# LINQ expression typed as an `IEnumerable<string>` and output the resulting items from that query to `Console.Out`, where each item is delimited by newlines (or a custom delimiter of your choice).",
 @"",
