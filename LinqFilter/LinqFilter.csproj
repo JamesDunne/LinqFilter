@@ -118,11 +118,11 @@
   <PropertyGroup>
     <PostBuildEvent>del /f /q "$(TargetDir)LinqFilter-Release.zip"
 "C:\Program Files\7-Zip\7z.exe" a "$(TargetDir)LinqFilter-Release.zip" "$(TargetPath)" "$(TargetPath).config" "$(TargetDir)$(TargetName).pdb" "WellDunne.Extensions.dll" "WellDunne.Extensions.pdb"
-copy "$(TargetPath)" C:\TFS\TFC\
-copy "$(TargetPath).config" C:\TFS\TFC\
-copy "$(TargetDir)$(TargetName).pdb" C:\TFS\TFC\
-copy "WellDunne.Extensions.dll" C:\TFS\TFC\
-copy "WellDunne.Extensions.pdb" C:\TFS\TFC\
+copy "$(TargetPath)" C:\TFS\cygwin\usr\local\bin\
+copy "$(TargetPath).config" C:\TFS\cygwin\usr\local\bin\
+copy "$(TargetDir)$(TargetName).pdb" C:\TFS\cygwin\usr\local\bin\
+copy "WellDunne.Extensions.dll" C:\TFS\cygwin\usr\local\bin\
+copy "WellDunne.Extensions.pdb" C:\TFS\cygwin\usr\local\bin\
 "$(TargetPath)" -clear-cache</PostBuildEvent>
   </PropertyGroup>
 </Project>

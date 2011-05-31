@@ -15,12 +15,23 @@ namespace LinqFilter
 {
     class Program
     {
+        static int consoleWidth = 80;
+
         static void Main(string[] args)
         {
 #if false
             ImpromptuUnitTest();
             return;
 #endif
+
+            try
+            {
+                consoleWidth = Console.WindowWidth;
+            }
+            catch (System.IO.IOException)
+            {
+                consoleWidth = 80;
+            }
 
             if (args.Length == 0)
             {
@@ -630,7 +641,7 @@ public sealed partial class DynamicQuery
 @"A local parameter `IEnumerable<string> lines` is given to the LINQ query which represents an enumeration over lines read in from `Console.In`."
                         }
                         // Wrap the lines to the window width:
-                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        from wrappedLine in line.WordWrap(consoleWidth - 1)
                         select wrappedLine
                     ).ToArray()
                 )
@@ -704,8 +715,8 @@ new[] { @"The 'class' buffer is lines of C# code placed within the dynamic class
                     (
                         from cols in prms
                         let wrap1 = (cols.Length == 1) ? null
-                            : cols[1].WordWrap(Console.WindowWidth - maxprmLength - 2)
-                        let tmp = (cols.Length == 1) ? cols[0].WordWrap(Console.WindowWidth - 1)
+                            : cols[1].WordWrap(consoleWidth - maxprmLength - 2)
+                        let tmp = (cols.Length == 1) ? cols[0].WordWrap(consoleWidth - 1)
                             : Enumerable.Repeat(cols[0] + new string(' ', maxprmLength - cols[0].Length + 1) + wrap1.First(), 1)
                               .Concat(
                                 from line in wrap1.Skip(1)
@@ -738,7 +749,7 @@ new[] { @"The 'class' buffer is lines of C# code placed within the dynamic class
 @"LinqFilter -q ""from i in Enumerable.Range(1, 10) select i.ToString()"" will output the numbers 1 to 10 on the console delimited by Environment.NewLine and ignore input lines.",
                         }
                         // Wrap the lines to the window width:
-                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        from wrappedLine in line.WordWrap(consoleWidth - 1)
                         select wrappedLine
                     ).ToArray()
                 )
@@ -823,7 +834,7 @@ new[] { @"The 'class' buffer is lines of C# code placed within the dynamic class
 @"The CaseMatch arguments are evaluated in order. There is no check to ensure unique case match values. The default case is the first parameter and is executed if no cases match.",
                         }
                         // Wrap the lines to the window width:
-                        from wrappedLine in line.WordWrap(Console.WindowWidth - 1)
+                        from wrappedLine in line.WordWrap(consoleWidth - 1)
                         select wrappedLine
                     ).ToArray()
                 )
